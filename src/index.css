@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-neutral-950 text-neutral-200 antialiased;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* A bare row: brushed rails top and bottom, faint 1HP ticks between. */
+.rack-row {
+  background:
+    linear-gradient(#a3a3a3, #525252) top / 100% 9px no-repeat,
+    linear-gradient(#525252, #a3a3a3) bottom / 100% 9px no-repeat,
+    repeating-linear-gradient(90deg, transparent 0 9px, rgb(255 255 255 / 0.04) 9px 10px),
+    #0a0a0a;
+}
+
+.canvas-bg {
+  background-color: #171717;
+  background-image: radial-gradient(circle, rgb(255 255 255 / 0.08) 1px, transparent 1px);
+}
