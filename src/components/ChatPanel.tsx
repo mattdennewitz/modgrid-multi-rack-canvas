@@ -6,6 +6,7 @@ import { summarizeLayout } from '../lib/layoutSummary';
 import type { AppState } from '../lib/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { ConfirmDialog } from './ConfirmDialog';
 
 const STARTERS = [
   'What would you change about this layout for patching ergonomics?',
@@ -17,10 +18,10 @@ const markdown: Components = {
   p: (props) => <p className="my-2 first:mt-0 last:mb-0" {...props} />,
   ul: (props) => <ul className="my-2 list-disc space-y-1 pl-5" {...props} />,
   ol: (props) => <ol className="my-2 list-decimal space-y-1 pl-5" {...props} />,
-  h1: (props) => <h3 className="mt-3 mb-1 font-semibold text-neutral-100" {...props} />,
-  h2: (props) => <h3 className="mt-3 mb-1 font-semibold text-neutral-100" {...props} />,
-  h3: (props) => <h3 className="mt-3 mb-1 font-semibold text-neutral-100" {...props} />,
-  strong: (props) => <strong className="font-semibold text-neutral-100" {...props} />,
+  h1: (props) => <h3 className="mt-3 mb-1 font-semibold text-foreground" {...props} />,
+  h2: (props) => <h3 className="mt-3 mb-1 font-semibold text-foreground" {...props} />,
+  h3: (props) => <h3 className="mt-3 mb-1 font-semibold text-foreground" {...props} />,
+  strong: (props) => <strong className="font-semibold text-foreground" {...props} />,
   code: (props) => <code className="rounded bg-neutral-800 px-1 text-[0.85em]" {...props} />,
   a: (props) => <a className="text-sky-400 underline" target="_blank" rel="noreferrer" {...props} />,
   table: (props) => (
@@ -41,6 +42,7 @@ interface Props {
 export function ChatPanel({ state, selectedId, onClose }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>(loadChat);
   const [input, setInput] = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -102,26 +104,34 @@ export function ChatPanel({ state, selectedId, onClose }: Props) {
     <aside className="flex h-full w-96 shrink-0 flex-col border-l bg-card/60">
       <header className="flex items-center gap-2 border-b px-4 py-3">
         <div className="flex-1">
-          <h2 className="text-sm font-semibold text-neutral-100">Layout advisor</h2>
-          <p className="text-xs text-neutral-500">Sees your current layout and locks. Advice only.</p>
+          <h2 className="text-sm font-semibold text-foreground">Layout advisor</h2>
+          <p className="text-xs text-muted-foreground">Sees your current layout and locks. Advice only.</p>
         </div>
         <Button
           size="xs"
           variant="ghost"
           disabled={streaming || messages.length === 0}
-          onClick={() => confirm('Clear the chat history?') && setMessages([])}
+          onClick={() => setConfirmClear(true)}
         >
           Clear
         </Button>
         <Button size="xs" variant="ghost" onClick={onClose}>
           Close
         </Button>
+        <ConfirmDialog
+          open={confirmClear}
+          onOpenChange={setConfirmClear}
+          title="Clear the chat history?"
+          description="This deletes the conversation with the layout advisor."
+          confirmLabel="Clear"
+          onConfirm={() => setMessages([])}
+        />
       </header>
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
         {messages.length === 0 && (
           <div className="space-y-2">
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted-foreground">
               Describe how you play and where the cases sit, e.g. "right-handed, the 252HP case is on the desk and the
               7U sits behind it".
             </p>
@@ -139,20 +149,20 @@ export function ChatPanel({ state, selectedId, onClose }: Props) {
         )}
         {messages.map((m) =>
           m.role === 'user' ? (
-            <div key={m.id} className="ml-8 rounded-lg bg-sky-900/50 px-3 py-2 whitespace-pre-wrap text-neutral-100">
+            <div key={m.id} className="ml-8 rounded-lg bg-sky-900/50 px-3 py-2 whitespace-pre-wrap text-foreground">
               {m.content}
             </div>
           ) : (
             <div
               key={m.id}
-              className={`mr-2 leading-relaxed ${m.error ? 'rounded-lg bg-red-950/60 px-3 py-2 text-red-300' : 'text-neutral-300'}`}
+              className={`mr-2 leading-relaxed ${m.error ? 'rounded-lg bg-red-950/60 px-3 py-2 text-red-300' : 'text-foreground/80'}`}
             >
               {m.content ? (
                 <Markdown remarkPlugins={[remarkGfm]} components={markdown}>
                   {m.content}
                 </Markdown>
               ) : (
-                <span className="animate-pulse text-neutral-500">Thinking…</span>
+                <span className="animate-pulse text-muted-foreground">Thinking…</span>
               )}
             </div>
           ),

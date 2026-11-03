@@ -13,6 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Toaster } from '@/components/ui/sonner';
+import { Kbd } from '@/components/ui/kbd';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type DropTarget =
   | { kind: 'case'; caseId: string; row: number; col: number; rotation: Rotation; valid: boolean }
@@ -76,6 +80,7 @@ export default function App() {
   const [rowDrag, setRowDrag] = useState<RowDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
+  const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(() => {
     try {
       return localStorage.getItem(CHAT_OPEN_KEY) === '1';
@@ -350,6 +355,10 @@ export default function App() {
   const ghostH = isSideways(ghostRotation) ? ghostShort : ghostLong;
 
   const editingCase = state.cases.find((c) => c.id === editingCaseId) ?? null;
+  const deletingCase = state.cases.find((c) => c.id === deletingCaseId) ?? null;
+  const deletingLocked = deletingCase
+    ? state.modules.filter((m) => m.locked && m.placement?.caseId === deletingCase.id).length
+    : 0;
 
   return (
     <div className={`flex h-full ${drag || rowDrag ? 'cursor-grabbing select-none' : ''}`}>
@@ -381,14 +390,7 @@ export default function App() {
               onRowGripPointerDown={onRowGripPointerDown}
               onMove={(id, x, y) => dispatch({ type: 'updateCase', id, patch: { x, y } })}
               onEdit={setEditingCaseId}
-              onDelete={(id) => {
-                const c = state.cases.find((x) => x.id === id);
-                const locked = state.modules.filter((m) => m.locked && m.placement?.caseId === id).length;
-                const note = locked ? ` ${locked} locked module(s) will be unlocked.` : '';
-                if (c && confirm(`Delete “${c.name}”? Its modules go back to the tray.${note}`)) {
-                  dispatch({ type: 'deleteCase', id });
-                }
-              }}
+              onDelete={setDeletingCaseId}
             />
           ))}
         </Canvas>
@@ -443,7 +445,29 @@ export default function App() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={deletingCase !== null}
+        onOpenChange={(open) => !open && setDeletingCaseId(null)}
+        title={`Delete “${deletingCase?.name ?? ''}”?`}
+        description={`Its modules go back to the tray.${deletingLocked ? ` ${deletingLocked} locked module(s) will be unlocked.` : ''}`}
+        confirmLabel="Delete"
+        onConfirm={() => deletingCase && dispatch({ type: 'deleteCase', id: deletingCase.id })}
+      />
+      <Toaster />
     </div>
+  );
+}
+
+function Tip({ label, keys, children }: { label: string; keys?: string; children: React.ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>
+        {label}
+        {keys && <Kbd className="ml-2">{keys}</Kbd>}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -460,32 +484,39 @@ function Toolbar(props: {
 }) {
   return (
     <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-lg backdrop-blur">
-      <Button variant="ghost" size="sm" onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">
-        Undo
-      </Button>
-      <Button variant="ghost" size="sm" onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">
-        Redo
-      </Button>
+      <Tip label="Undo" keys="⌘Z">
+        <Button variant="ghost" size="sm" onClick={props.onUndo} disabled={!props.canUndo}>
+          Undo
+        </Button>
+      </Tip>
+      <Tip label="Redo" keys="⇧⌘Z">
+        <Button variant="ghost" size="sm" onClick={props.onRedo} disabled={!props.canRedo}>
+          Redo
+        </Button>
+      </Tip>
       <Separator orientation="vertical" className="mx-1 h-5" />
-      <Button variant="ghost" size="sm" onClick={() => props.onZoom(1 / 1.2)} title="Zoom out">
-        −
-      </Button>
+      <Tip label="Zoom out">
+        <Button variant="ghost" size="sm" onClick={() => props.onZoom(1 / 1.2)}>
+          −
+        </Button>
+      </Tip>
       <span className="w-12 text-center text-xs text-muted-foreground tabular-nums">{Math.round(props.zoom * 100)}%</span>
-      <Button variant="ghost" size="sm" onClick={() => props.onZoom(1.2)} title="Zoom in">
-        +
-      </Button>
-      <Button variant="ghost" size="sm" onClick={props.onFit} title="Fit all cases">
-        Fit
-      </Button>
+      <Tip label="Zoom in">
+        <Button variant="ghost" size="sm" onClick={() => props.onZoom(1.2)}>
+          +
+        </Button>
+      </Tip>
+      <Tip label="Fit all cases">
+        <Button variant="ghost" size="sm" onClick={props.onFit}>
+          Fit
+        </Button>
+      </Tip>
       <Separator orientation="vertical" className="mx-1 h-5" />
-      <Button
-        variant={props.chatOpen ? 'default' : 'ghost'}
-        size="sm"
-        onClick={props.onToggleChat}
-        title="Layout advisor chat"
-      >
-        Chat
-      </Button>
+      <Tip label="Layout advisor chat">
+        <Button variant={props.chatOpen ? 'default' : 'ghost'} size="sm" onClick={props.onToggleChat}>
+          Chat
+        </Button>
+      </Tip>
     </div>
   );
 }

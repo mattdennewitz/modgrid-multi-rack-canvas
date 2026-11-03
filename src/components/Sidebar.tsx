@@ -9,6 +9,14 @@ import type { AppState, CollectionEntry, CollectionModule, ImportedRack, ModuleI
 import { ModulePanel } from './ModulePanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { ConfirmDialog } from './ConfirmDialog';
+import { ChevronRight } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const TRAY_SCALE = 0.5;
 
@@ -28,12 +36,32 @@ const CASE_PRESETS = [
   { rows: 3, hp: 126 },
 ];
 
-function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
+function SectionHeading({ open, children }: { open: boolean; children: React.ReactNode }) {
   return (
-    <section className="border-b p-4">
-      <h2 className="mb-2 text-xs font-semibold tracking-wider text-neutral-400 uppercase">{title}</h2>
-      {children}
-    </section>
+    <CollapsibleTrigger className="group flex w-full items-center gap-1 text-left text-xs font-semibold tracking-wider text-muted-foreground uppercase hover:text-foreground">
+      <ChevronRight className={`size-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+      <h2 className="flex-1">{children}</h2>
+    </CollapsibleTrigger>
+  );
+}
+
+function Section({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <section className="border-b p-4">
+        <SectionHeading open={open}>{title}</SectionHeading>
+        <CollapsibleContent className="pt-2">{children}</CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 
@@ -122,16 +150,18 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
         onChange={(e) => setUrl(e.target.value)}
       />
       <div className="flex items-center justify-between gap-2">
-        <label className="flex items-center gap-2 text-xs text-neutral-300">
-          <input type="checkbox" checked={createCase} onChange={(e) => setCreateCase(e.target.checked)} />
-          Create a case with this layout <span className="text-neutral-500">(racks only)</span>
-        </label>
+        <Label className="text-xs font-normal">
+          <Checkbox checked={createCase} onCheckedChange={(v) => setCreateCase(v === true)} />
+          Create a case with this layout <span className="text-muted-foreground">(racks only)</span>
+        </Label>
         <Button size="sm" disabled={busy || !url.trim()}>
           {busy ? 'Importing…' : 'Import'}
         </Button>
       </div>
       {message && (
-        <p className={`text-xs ${message.kind === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{message.text}</p>
+        <Alert variant={message.kind === 'error' ? 'destructive' : 'default'} className="px-3 py-2 text-xs">
+          <AlertDescription>{message.text}</AlertDescription>
+        </Alert>
       )}
     </form>
   );
@@ -150,25 +180,29 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
 
   return (
     <form onSubmit={submit} className="space-y-2">
-      <div className="flex flex-wrap gap-1">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        className="flex-wrap"
+        value={CASE_PRESETS.some((p) => p.rows === rows && p.hp === hp) ? `${rows}x${hp}` : ''}
+        onValueChange={(v) => {
+          const p = CASE_PRESETS.find((x) => `${x.rows}x${x.hp}` === v);
+          if (p) {
+            setRows(p.rows);
+            setHp(p.hp);
+          }
+        }}
+      >
         {CASE_PRESETS.map((p) => (
-          <Button
-            key={`${p.rows}x${p.hp}`}
-            type="button"
-            size="xs"
-            variant={p.rows === rows && p.hp === hp ? 'default' : 'secondary'}
-            onClick={() => {
-              setRows(p.rows);
-              setHp(p.hp);
-            }}
-          >
+          <ToggleGroupItem key={`${p.rows}x${p.hp}`} value={`${p.rows}x${p.hp}`} className="text-xs">
             {p.rows}×{p.hp}
-          </Button>
+          </ToggleGroupItem>
         ))}
-      </div>
+      </ToggleGroup>
       <Input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
       <div className="flex items-end gap-2">
-        <label className="flex-1 text-xs text-neutral-400">
+        <Label className="flex-1 flex-col items-stretch text-xs font-normal text-muted-foreground">
           Rows (3U)
           <Input
             type="number"
@@ -177,8 +211,8 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             value={rows}
             onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
           />
-        </label>
-        <label className="flex-1 text-xs text-neutral-400">
+        </Label>
+        <Label className="flex-1 flex-col items-stretch text-xs font-normal text-muted-foreground">
           Width (HP)
           <Input
             type="number"
@@ -187,7 +221,7 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             value={hp}
             onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
           />
-        </label>
+        </Label>
         <Button size="sm">Add</Button>
       </div>
     </form>
@@ -213,19 +247,19 @@ function SelectedModule({
           href={modulePageUrl(module)}
           target="_blank"
           rel="noreferrer"
-          className="font-semibold text-neutral-100 hover:text-sky-400"
+          className="font-semibold text-foreground hover:text-sky-400"
         >
           {module.name}
         </a>
-        <div className="text-xs text-neutral-400">
+        <div className="text-xs text-muted-foreground">
           {module.vendor} · {module.hp}HP{module.is1u && ' · 1U'}
         </div>
-        {module.description && <div className="text-xs text-neutral-500">{module.description}</div>}
+        {module.description && <div className="text-xs text-muted-foreground">{module.description}</div>}
       </div>
-      <div className="text-xs text-neutral-400">
+      <div className="text-xs text-muted-foreground">
         +12V {module.power.plus12}mA · −12V {module.power.minus12}mA · 5V {module.power.plus5}mA
       </div>
-      <div className="text-xs text-neutral-500">
+      <div className="text-xs text-muted-foreground">
         {module.placement
           ? `In ${caseName ?? 'a case'}, row ${module.placement.row}, HP ${module.placement.col}${
               rotation ? ` · rotated ${rotation}°` : ''
@@ -281,6 +315,7 @@ function SelectedModule({
 
 function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dispatch<Action> }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -297,7 +332,7 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
       if (!isAppState(parsed)) throw new Error('Not a rack canvas file');
       dispatch({ type: 'replace', state: parsed });
     } catch (err) {
-      alert(`Couldn't load file: ${err instanceof Error ? err.message : err}`);
+      toast.error(`Couldn't load file: ${err instanceof Error ? err.message : err}`);
     }
   };
 
@@ -309,15 +344,17 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
       <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
         Load…
       </Button>
-      <Button size="sm" variant="secondary"
-        onClick={() => {
-          if (confirm('Clear all cases and modules? (You can undo.)')) {
-            dispatch({ type: 'replace', state: { cases: [], modules: [] } });
-          }
-        }}
-      >
+      <Button size="sm" variant="secondary" onClick={() => setConfirmClear(true)}>
         Clear
       </Button>
+      <ConfirmDialog
+        open={confirmClear}
+        onOpenChange={setConfirmClear}
+        title="Clear everything?"
+        description="This removes all cases and modules. You can undo."
+        confirmLabel="Clear"
+        onConfirm={() => dispatch({ type: 'replace', state: { cases: [], modules: [] } })}
+      />
       <input
         ref={fileRef}
         type="file"
@@ -356,14 +393,15 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
   }, [state.modules, filter, size]);
   const trayTotal = state.modules.filter((m) => !m.placement).length;
 
+  const [trayOpen, setTrayOpen] = useState(true);
   const selected = state.modules.find((m) => m.id === selectedId) ?? null;
   const selectedCase = selected?.placement ? state.cases.find((c) => c.id === selected.placement!.caseId) : null;
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/60">
-      <header className="border-b border-neutral-800 px-4 py-3">
-        <h1 className="text-base font-semibold text-neutral-100">Rack Canvas</h1>
-        <p className="text-xs text-neutral-500">All your cases, one view.</p>
+    <aside className="flex h-full w-80 shrink-0 flex-col border-r border bg-card/60">
+      <header className="border-b border px-4 py-3">
+        <h1 className="text-base font-semibold text-foreground">Rack Canvas</h1>
+        <p className="text-xs text-muted-foreground">All your cases, one view.</p>
       </header>
       <Section title="Import from ModularGrid">
         <ImportRack state={state} dispatch={dispatch} />
@@ -383,14 +421,20 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
       )}
       <div
         ref={trayRef}
-        className={`flex min-h-40 flex-1 flex-col overflow-hidden border-b border-neutral-800 transition-colors ${
+        className={`flex flex-col overflow-hidden border-b transition-colors ${
+          trayOpen ? 'min-h-40 flex-1' : ''
+        } ${
           trayIsTarget ? 'bg-sky-950/60 ring-2 ring-sky-500 ring-inset' : ''
         }`}
       >
+        <Collapsible open={trayOpen} onOpenChange={setTrayOpen} className="flex min-h-0 flex-1 flex-col">
         <div className="px-4 pt-4">
-          <h2 className="mb-2 text-xs font-semibold tracking-wider text-neutral-400 uppercase">
-            Tray <span className="font-normal text-neutral-500">({trayTotal} unplaced)</span>
-          </h2>
+          <div className="mb-2">
+            <SectionHeading open={trayOpen}>
+              Tray <span className="font-normal normal-case">({trayTotal} unplaced)</span>
+            </SectionHeading>
+          </div>
+          <CollapsibleContent>
           {trayTotal > 0 && (
             <>
               <Input
@@ -399,27 +443,28 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
-              <div className="mb-3 flex gap-1" role="group" aria-label="Filter by module height">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                className="mb-3 w-full"
+                aria-label="Filter by module height"
+                value={size}
+                onValueChange={(v) => v && setSize(v as typeof size)}
+              >
                 {TRAY_SIZES.map((s) => (
-                  <Button
-                    key={s.value}
-                    type="button"
-                    size="xs"
-                    variant={size === s.value ? 'default' : 'secondary'}
-                    aria-pressed={size === s.value}
-                    onClick={() => setSize(s.value)}
-                    className="flex-1"
-                  >
+                  <ToggleGroupItem key={s.value} value={s.value} className="flex-1">
                     {s.label}
-                  </Button>
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
             </>
           )}
+          </CollapsibleContent>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        <CollapsibleContent className="flex-1 overflow-y-auto px-4 pb-4">
           {trayTotal === 0 ? (
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs text-muted-foreground">
               Drag modules here to take them out of a case. Imported modules that don't fit land here too.
             </p>
           ) : (
@@ -438,11 +483,12 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
               ))}
             </div>
           )}
-        </div>
+        </CollapsibleContent>
+        </Collapsible>
       </div>
-      <div className="p-4">
+      <Section title="File">
         <FileActions state={state} dispatch={dispatch} />
-      </div>
+      </Section>
     </aside>
   );
 }
