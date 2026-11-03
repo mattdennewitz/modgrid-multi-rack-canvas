@@ -37,3 +37,34 @@ describe('summarizeLayout', () => {
     expect(summarizeLayout(emptyState)).toContain('There are no cases yet.');
   });
 });
+
+describe('summarizeLayout with 1U rows', () => {
+  it('labels 1U rows and describes sideways and flipped modules', () => {
+    const mod = (slug: string, hp: number) => ({
+      slug,
+      moduleId: slug,
+      versionId: null,
+      name: slug,
+      vendor: 'V',
+      description: '',
+      hp,
+      depth: 0,
+      is1u: false,
+      power: { plus12: 0, minus12: 0, plus5: 0 },
+    });
+    let s = reducer(emptyState, { type: 'addCase', name: 'A', rows: 2, hp: 84 });
+    const caseId = s.cases[0].id;
+    s = reducer(s, { type: 'updateCase', id: caseId, patch: { rowTypes: ['3U', '1U'] } });
+    s = reducer(s, { type: 'importCollection', source: 't', modules: [mod('narrow', 2), mod('flip', 6)] });
+    const id = (slug: string) => s.modules.find((m) => m.slug === slug)!.id;
+    s = reducer(s, { type: 'placeModule', id: id('narrow'), placement: { caseId, row: 2, col: 1, rotation: 90 } });
+    s = reducer(s, { type: 'placeModule', id: id('flip'), placement: { caseId, row: 1, col: 1, rotation: 180 } });
+
+    const text = summarizeLayout(s);
+    expect(text).toContain('Row 1:\n');
+    expect(text).toMatch(/- HP 1–6: flip — V .*flipped 180°/);
+    expect(text).toMatch(/Row 2 \(1U\):\n- HP 1–26: narrow — V .*mounted sideways, rotated 90°, spans 26HP/);
+    expect(text).toContain('- HP 27–84: empty (58HP)');
+    expect(text).toContain('32/168HP used');
+  });
+});
