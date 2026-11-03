@@ -15,7 +15,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ConfirmDialog } from './ConfirmDialog';
-import { ChevronRight } from 'lucide-react';
+import { ChevronDown, Download, Link2, Plus, Trash2, Upload, Lock, LockOpen, RotateCw, Copy, Inbox, LayoutGrid, Boxes, Package, type LucideIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const TRAY_SCALE = 0.5;
@@ -36,30 +37,48 @@ const CASE_PRESETS = [
   { rows: 3, hp: 126 },
 ];
 
-function SectionHeading({ open, children }: { open: boolean; children: React.ReactNode }) {
+function SectionHeading({
+  open,
+  icon: Icon,
+  children,
+  aside,
+}: {
+  open: boolean;
+  icon: LucideIcon;
+  children: React.ReactNode;
+  aside?: React.ReactNode;
+}) {
   return (
-    <CollapsibleTrigger className="group flex w-full items-center gap-1 text-left text-xs font-semibold tracking-wider text-muted-foreground uppercase hover:text-foreground">
-      <ChevronRight className={`size-3.5 shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+    <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md text-left text-[13px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+      <Icon className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
       <h2 className="flex-1">{children}</h2>
+      {aside}
+      <ChevronDown
+        className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`}
+      />
     </CollapsibleTrigger>
   );
 }
 
 function Section({
   title,
+  icon,
   defaultOpen = true,
   children,
 }: {
   title: React.ReactNode;
+  icon: LucideIcon;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Collapsible asChild open={open} onOpenChange={setOpen}>
-      <section className="border-b p-4">
-        <SectionHeading open={open}>{title}</SectionHeading>
-        <CollapsibleContent className="pt-2">{children}</CollapsibleContent>
+      <section className="border-b border-border/60 px-4 py-3.5">
+        <SectionHeading open={open} icon={icon}>
+          {title}
+        </SectionHeading>
+        <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
       </section>
     </Collapsible>
   );
@@ -144,17 +163,22 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
 
   return (
     <form onSubmit={submit} className="space-y-2">
-      <Input
-        placeholder="Rack or profile URL on modulargrid.net"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-      />
+      <div className="relative">
+        <Link2 className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-8"
+          placeholder="modulargrid.net rack or profile URL"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+      </div>
       <div className="space-y-2">
         <Label className="text-xs font-normal">
           <Checkbox checked={createCase} onCheckedChange={(v) => setCreateCase(v === true)} />
           Create a case with this layout <span className="text-muted-foreground">(racks only)</span>
         </Label>
         <Button className="w-full" disabled={busy || !url.trim()}>
+          <Download />
           {busy ? 'Importing…' : 'Import'}
         </Button>
       </div>
@@ -184,6 +208,7 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         type="single"
         variant="outline"
         size="sm"
+        spacing={1.5}
         className="grid w-full grid-cols-3"
         value={CASE_PRESETS.some((p) => p.rows === rows && p.hp === hp) ? `${rows}x${hp}` : ''}
         onValueChange={(v) => {
@@ -222,7 +247,9 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
           />
         </Label>
-        <Button>Add</Button>
+        <Button size="icon" aria-label="Add case" title="Add case">
+          <Plus />
+        </Button>
       </div>
     </form>
   );
@@ -241,13 +268,13 @@ function SelectedModule({
 }) {
   const rotation = module.placement?.rotation ?? 0;
   return (
-    <div className="space-y-2 text-sm">
-      <div>
+    <div className="space-y-2.5 text-sm">
+      <div className="rounded-lg border bg-background/60 p-3">
         <a
           href={modulePageUrl(module)}
           target="_blank"
           rel="noreferrer"
-          className="font-semibold text-foreground hover:text-sky-400"
+          className="font-semibold text-foreground underline-offset-2 hover:text-sky-400 hover:underline"
         >
           {module.name}
         </a>
@@ -277,6 +304,7 @@ function SelectedModule({
             onClick={() => dispatch({ type: 'setLocked', id: module.id, locked: !module.locked })}
             title="Toggle lock (L)"
           >
+            {module.locked ? <LockOpen /> : <Lock />}
             {module.locked ? 'Unlock' : 'Lock'}
           </Button>
         )}
@@ -286,6 +314,7 @@ function SelectedModule({
             onClick={() => dispatch({ type: 'rotateModule', id: module.id })}
             title="Rotate (R)"
           >
+            <RotateCw />
             Rotate
           </Button>
         )}
@@ -298,6 +327,7 @@ function SelectedModule({
           </Button>
         )}
         <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'duplicateModule', id: module.id })}>
+          <Copy />
           Duplicate
         </Button>
         <Button
@@ -339,12 +369,15 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
   return (
     <div className="flex flex-wrap gap-2">
       <Button size="sm" variant="secondary" onClick={exportJson}>
+        <Download />
         Export
       </Button>
       <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
+        <Upload />
         Load…
       </Button>
       <Button size="sm" variant="secondary" onClick={() => setConfirmClear(true)}>
+        <Trash2 />
         Clear
       </Button>
       <ConfirmDialog
@@ -398,19 +431,27 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
   const selectedCase = selected?.placement ? state.cases.find((c) => c.id === selected.placement!.caseId) : null;
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-card/60">
-      <header className="border-b px-4 py-3">
-        <h1 className="text-sm font-semibold tracking-tight text-foreground">Rack Canvas</h1>
-        <p className="text-xs text-muted-foreground">All your cases, one view.</p>
+    <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-card">
+      <header className="flex items-center gap-3 border-b border-border/60 px-4 py-4">
+        <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-sm">
+          <LayoutGrid className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-sm leading-tight font-semibold tracking-tight text-foreground">Rack Canvas</h1>
+          <p className="text-xs text-muted-foreground">
+            {state.cases.length} {state.cases.length === 1 ? 'case' : 'cases'} · {state.modules.length}{' '}
+            {state.modules.length === 1 ? 'module' : 'modules'}
+          </p>
+        </div>
       </header>
-      <Section title="Import from ModularGrid">
+      <Section title="Import from ModularGrid" icon={Download}>
         <ImportRack state={state} dispatch={dispatch} />
       </Section>
-      <Section title="Add a case">
+      <Section title="Add a case" icon={Boxes}>
         <AddCase dispatch={dispatch} />
       </Section>
       {selected && (
-        <Section title="Selected module">
+        <Section title="Selected module" icon={Package}>
           <SelectedModule
             module={selected}
             caseName={selectedCase?.name ?? null}
@@ -421,17 +462,23 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
       )}
       <div
         ref={trayRef}
-        className={`flex flex-col overflow-hidden border-b transition-colors ${
+        className={`flex flex-col overflow-hidden border-b border-border/60 transition-colors ${
           trayOpen ? 'min-h-40 flex-1' : ''
-        } ${
-          trayIsTarget ? 'bg-sky-950/60 ring-2 ring-sky-500 ring-inset' : ''
-        }`}
+        } ${trayIsTarget ? 'bg-sky-500/10 ring-2 ring-sky-500/70 ring-inset' : ''}`}
       >
         <Collapsible open={trayOpen} onOpenChange={setTrayOpen} className="flex min-h-0 flex-1 flex-col">
-        <div className="px-4 pt-4">
-          <div className="mb-2">
-            <SectionHeading open={trayOpen}>
-              Tray <span className="font-normal normal-case">({trayTotal} unplaced)</span>
+        <div className="px-4 pt-3.5">
+          <div className="mb-3">
+            <SectionHeading
+              open={trayOpen}
+              icon={Inbox}
+              aside={
+                <Badge variant="secondary" className="tabular-nums">
+                  {trayTotal}
+                </Badge>
+              }
+            >
+              Tray
             </SectionHeading>
           </div>
           <CollapsibleContent>
@@ -447,6 +494,7 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
                 type="single"
                 variant="outline"
                 size="sm"
+                spacing={1.5}
                 className="mb-3 w-full"
                 aria-label="Filter by module height"
                 value={size}
@@ -464,7 +512,7 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
         </div>
         <CollapsibleContent className="flex-1 overflow-y-auto px-4 pb-4">
           {trayTotal === 0 ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
               Drag modules here to take them out of a case. Imported modules that don't fit land here too.
             </p>
           ) : (
@@ -486,7 +534,7 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
         </CollapsibleContent>
         </Collapsible>
       </div>
-      <Section title="File">
+      <Section title="File" icon={Upload}>
         <FileActions state={state} dispatch={dispatch} />
       </Section>
     </aside>

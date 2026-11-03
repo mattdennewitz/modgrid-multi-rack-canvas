@@ -458,7 +458,7 @@ function Toolbar(props: {
   onFit: () => void;
 }) {
   return (
-    <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-lg backdrop-blur">
+    <div className="absolute top-3 right-3 flex items-center gap-1 rounded-xl border border-border/60 bg-card/80 p-1 shadow-xl shadow-black/30 backdrop-blur-md">
       <Tip label="Undo" keys="⌘Z">
         <Button variant="ghost" size="sm" onClick={props.onUndo} disabled={!props.canUndo}>
           Undo
