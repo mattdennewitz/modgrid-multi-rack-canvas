@@ -1,0 +1,12 @@
+{
+  "cases": [
+    { "id": "case-1", "name": "Mixed 104HP", "rows": 3, "hp": 104, "rowTypes": ["3U", "1U", "1U"], "x": 0, "y": 0 }
+  ],
+  "modules": [
+    { "id": "m-wide", "moduleId": "fixture-wide", "versionId": null, "name": "Wide 12HP", "vendor": "Test", "description": "", "slug": "wide", "hp": 12, "is1u": false, "power": { "plus12": 10, "minus12": 10, "plus5": 0 }, "source": "fixture", "placement": { "caseId": "case-1", "row": 1, "col": 1 } },
+    { "id": "m-narrow", "moduleId": "fixture-narrow", "versionId": null, "name": "Narrow 2HP", "vendor": "Test", "description": "", "slug": "narrow", "hp": 2, "is1u": false, "power": { "plus12": 5, "minus12": 0, "plus5": 0 }, "source": "fixture", "placement": null },
+    { "id": "m-four", "moduleId": "fixture-four", "versionId": null, "name": "Four 4HP", "vendor": "Test", "description": "", "slug": "four", "hp": 4, "is1u": false, "power": { "plus12": 5, "minus12": 5, "plus5": 0 }, "source": "fixture", "placement": null },
+    { "id": "m-five", "moduleId": "fixture-five", "versionId": null, "name": "Five 5HP", "vendor": "Test", "description": "", "slug": "five", "hp": 5, "is1u": false, "power": { "plus12": 5, "minus12": 5, "plus5": 0 }, "source": "fixture", "placement": null },
+    { "id": "m-tile", "moduleId": "fixture-tile", "versionId": null, "name": "Tile 8HP 1U", "vendor": "Test", "description": "", "slug": "tile", "hp": 8, "is1u": true, "power": { "plus12": 20, "minus12": 0, "plus5": 0 }, "source": "fixture", "placement": null }
+  ]
+}

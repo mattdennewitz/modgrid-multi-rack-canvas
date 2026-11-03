@@ -1,14 +1,16 @@
 import { useRef, useState } from 'react';
-import { CASE_PAD, HP_PX, ROW_PX, caseSize, colLeft, rowTop, snapToGrid } from '../lib/geometry';
+import { CASE_PAD, HP_PX, caseSize, colLeft, insertionLineY, rowHeight, rowTop, rowTypeOf, snapToGrid } from '../lib/geometry';
 import { sumPower } from '../lib/modulargrid';
 import { rowGaps } from '../lib/placement';
-import type { CaseItem, ModuleItem } from '../lib/types';
+import { footprintCols } from '../lib/rotation';
+import type { CaseItem, ModuleItem, Rotation } from '../lib/types';
 import { ModulePanel } from './ModulePanel';
 
 export interface DropPreview {
   module: ModuleItem;
   row: number;
   col: number;
+  rotation: Rotation;
   valid: boolean;
 }
 
@@ -18,8 +20,15 @@ interface Props {
   zoom: number;
   preview: DropPreview | null;
   draggingId: string | null;
+  /** The row being dragged in this case, if any; its modules are dimmed. */
+  draggingRow: number | null;
+  /** Where a dragged row would be inserted in this case, and whether that drop is allowed. */
+  rowInsert: { index: number; valid: boolean } | null;
+  /** The row of this case a row from another case would swap with, and whether that is allowed. */
+  rowSwap: { row: number; valid: boolean } | null;
   selectedId: string | null;
   onModulePointerDown: (e: React.PointerEvent<HTMLDivElement>, m: ModuleItem) => void;
+  onRowGripPointerDown: (e: React.PointerEvent<HTMLDivElement>, caseId: string, row: number) => void;
   onMove: (id: string, x: number, y: number) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
@@ -36,14 +45,24 @@ function LockBadge() {
 }
 
 /** Free-HP label centred in an empty stretch of a row; sized to stay readable when zoomed out. */
-function GapLabel({ row, gap, zoom }: { row: number; gap: { col: number; hp: number }; zoom: number }) {
+function GapLabel({
+  top,
+  height,
+  gap,
+  zoom,
+}: {
+  top: number;
+  height: number;
+  gap: { col: number; hp: number };
+  zoom: number;
+}) {
   const width = gap.hp * HP_PX;
   const vertical = gap.hp < 4;
   const fontSize = Math.min(12 / zoom, vertical ? width * 0.8 : 28);
   return (
     <div
       className="pointer-events-none absolute flex items-center justify-center"
-      style={{ left: CASE_PAD + colLeft(gap.col), top: rowTop(row), width, height: ROW_PX }}
+      style={{ left: CASE_PAD + colLeft(gap.col), top, width, height }}
     >
       <span
         className="rounded-sm bg-black/60 font-medium whitespace-nowrap text-neutral-400 tabular-nums"
@@ -65,8 +84,12 @@ export function CaseView({
   zoom,
   preview,
   draggingId,
+  draggingRow,
+  rowInsert,
+  rowSwap,
   selectedId,
   onModulePointerDown,
+  onRowGripPointerDown,
   onMove,
   onEdit,
   onDelete,
@@ -77,7 +100,7 @@ export function CaseView({
   const [offset, setOffset] = useState<{ dx: number; dy: number } | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
 
-  const usedHp = modules.reduce((n, m) => n + m.hp, 0);
+  const usedHp = modules.reduce((n, m) => n + footprintCols(m, m.placement?.rotation), 0);
   const power = sumPower(modules);
   const x = offset ? snapToGrid(c.x + offset.dx) : c.x;
   const y = offset ? snapToGrid(c.y + offset.dy) : c.y;
@@ -144,26 +167,51 @@ export function CaseView({
         <div
           key={i}
           className="rack-row absolute"
-          style={{ left: CASE_PAD, top: rowTop(i + 1), width: c.hp * HP_PX, height: ROW_PX }}
+          style={{
+            left: CASE_PAD,
+            top: rowTop(c, i + 1),
+            width: c.hp * HP_PX,
+            height: rowHeight(rowTypeOf(c, i + 1)),
+          }}
+        />
+      ))}
+
+      {Array.from({ length: c.rows }, (_, i) => (
+        <div
+          key={`grip-${i}`}
+          title="Drag to move this row"
+          className="absolute cursor-grab rounded-sm bg-neutral-600/50 hover:bg-sky-500/70 active:cursor-grabbing"
+          style={{ left: 3, top: rowTop(c, i + 1), width: CASE_PAD - 6, height: rowHeight(rowTypeOf(c, i + 1)) }}
+          onPointerDown={(e) => onRowGripPointerDown(e, c.id, i + 1)}
         />
       ))}
 
       {Array.from({ length: c.rows }, (_, i) =>
-        rowGaps(modules, c, i + 1).map((g) => <GapLabel key={`${i}:${g.col}`} row={i + 1} gap={g} zoom={zoom} />),
+        rowGaps(modules, c, i + 1).map((g) => (
+          <GapLabel
+            key={`${i}:${g.col}`}
+            top={rowTop(c, i + 1)}
+            height={rowHeight(rowTypeOf(c, i + 1))}
+            gap={g}
+            zoom={zoom}
+          />
+        )),
       )}
 
       {modules.map((m) => {
         const p = m.placement!;
+        const rotation = p.rotation ?? 0;
         return (
           <ModulePanel
             key={m.id}
             module={m}
-            width={m.hp * HP_PX}
-            height={ROW_PX}
+            width={footprintCols(m, rotation) * HP_PX}
+            height={rowHeight(rowTypeOf(c, p.row))}
+            rotation={rotation}
             className={`absolute ${m.locked ? 'cursor-default' : 'cursor-grab'} ${
-              m.id === draggingId ? 'opacity-25' : ''
+              m.id === draggingId || p.row === draggingRow ? 'opacity-25' : ''
             } ${m.id === selectedId ? 'z-10 outline-2 outline-sky-400' : ''}`}
-            style={{ left: CASE_PAD + colLeft(p.col), top: rowTop(p.row) }}
+            style={{ left: CASE_PAD + colLeft(p.col), top: rowTop(c, p.row) }}
             onPointerDown={(e) => onModulePointerDown(e, m)}
           >
             {m.locked && <LockBadge />}
@@ -178,15 +226,42 @@ export function CaseView({
           }`}
           style={{
             left: CASE_PAD + colLeft(preview.col),
-            top: rowTop(preview.row),
-            width: preview.module.hp * HP_PX,
-            height: ROW_PX,
+            top: rowTop(c, preview.row),
+            width: footprintCols(preview.module, preview.rotation) * HP_PX,
+            height: rowHeight(rowTypeOf(c, preview.row)),
           }}
         >
           {preview.valid && (
-            <ModulePanel module={preview.module} width={preview.module.hp * HP_PX} height={ROW_PX} className="opacity-80" />
+            <ModulePanel
+              module={preview.module}
+              width={footprintCols(preview.module, preview.rotation) * HP_PX}
+              height={rowHeight(rowTypeOf(c, preview.row))}
+              rotation={preview.rotation}
+              className="opacity-80"
+            />
           )}
         </div>
+      )}
+
+      {rowSwap && (
+        <div
+          className={`pointer-events-none absolute z-30 outline-2 ${
+            rowSwap.valid ? 'bg-emerald-400/10 outline-emerald-400' : 'bg-red-500/20 outline-red-500'
+          }`}
+          style={{
+            left: CASE_PAD,
+            top: rowTop(c, rowSwap.row),
+            width: c.hp * HP_PX,
+            height: rowHeight(rowTypeOf(c, rowSwap.row)),
+          }}
+        />
+      )}
+
+      {rowInsert && (
+        <div
+          className={`pointer-events-none absolute z-30 h-1 rounded ${rowInsert.valid ? 'bg-emerald-400' : 'bg-red-500'}`}
+          style={{ left: CASE_PAD, top: insertionLineY(c, rowInsert.index) - 2, width: c.hp * HP_PX }}
+        />
       )}
     </div>
   );

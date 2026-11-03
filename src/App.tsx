@@ -4,12 +4,16 @@ import { CaseView, type DropPreview } from './components/CaseView';
 import { ChatPanel } from './components/ChatPanel';
 import { ModulePanel } from './components/ModulePanel';
 import { Sidebar } from './components/Sidebar';
-import { HP_PX, ROW_PX, caseSize, pointToSlot } from './lib/geometry';
+import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowAtY, rowInsertIndex, rowTypeOf } from './lib/geometry';
 import { nearestFreeCol } from './lib/placement';
-import { historyReducer, isOutOfBounds, loadState, saveState, type Action } from './lib/store';
-import type { AppState, CaseItem, ModuleItem } from './lib/types';
+import { SIDEWAYS_COLS, allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
+import { historyReducer, isOutOfBounds, loadState, reducer, saveState, type Action } from './lib/store';
+import type { AppState, CaseItem, ModuleItem, Rotation, RowType } from './lib/types';
 
-type DropTarget = { kind: 'case'; caseId: string; row: number; col: number; valid: boolean } | { kind: 'tray' } | null;
+type DropTarget =
+  | { kind: 'case'; caseId: string; row: number; col: number; rotation: Rotation; valid: boolean }
+  | { kind: 'tray' }
+  | null;
 
 interface DragState {
   module: ModuleItem;
@@ -18,6 +22,8 @@ interface DragState {
   /** Where the module was grabbed, as a fraction of its width/height. */
   grabFx: number;
   grabFy: number;
+  /** The rotation the user asked for; the target may snap it to suit the row under the cursor. */
+  rotation: Rotation;
   target: DropTarget;
 }
 
@@ -28,6 +34,21 @@ interface PendingDrag {
   grabFx: number;
   grabFy: number;
 }
+
+/** Over its own case a dragged row is reordered (insertion point); over another case it swaps with the row under it. */
+type RowSpot = { kind: 'insert'; caseId: string; index: number } | { kind: 'swap'; caseId: string; row: number };
+
+interface RowDrag {
+  caseId: string;
+  row: number;
+  /** The drop under the cursor, or null when it isn't over a case of the same width. */
+  target: (RowSpot & { valid: boolean }) | null;
+}
+
+const rowAction = (from: { caseId: string; row: number }, t: RowSpot): Action =>
+  t.kind === 'insert'
+    ? { type: 'reorderRow', caseId: from.caseId, fromRow: from.row, toIndex: t.index }
+    : { type: 'swapRows', aCaseId: from.caseId, aRow: from.row, bCaseId: t.caseId, bRow: t.row };
 
 const DRAG_THRESHOLD = 4;
 const CHAT_OPEN_KEY = 'rack-canvas:chat-open';
@@ -48,6 +69,7 @@ export default function App() {
 
   const [view, setView] = useState<View>({ x: 40, y: 40, zoom: 0.6 });
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [rowDrag, setRowDrag] = useState<RowDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(() => {
@@ -70,8 +92,8 @@ export default function App() {
   const pending = useRef<PendingDrag | null>(null);
 
   // Window listeners read the latest values through this ref instead of re-binding every render.
-  const latest = useRef({ state, view, drag });
-  latest.current = { state, view, drag };
+  const latest = useRef({ state, view, drag, rowDrag });
+  latest.current = { state, view, drag, rowDrag };
 
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
@@ -105,7 +127,13 @@ export default function App() {
 
   // --- module drag & drop ---------------------------------------------------
 
-  const findTarget = (clientX: number, clientY: number, module: ModuleItem, grabFx: number): DropTarget => {
+  const findTarget = (
+    clientX: number,
+    clientY: number,
+    module: ModuleItem,
+    grabFx: number,
+    rotation: Rotation,
+  ): DropTarget => {
     const { state, view } = latest.current;
     const trayRect = trayRef.current?.getBoundingClientRect();
     if (trayRect && inside(trayRect, clientX, clientY)) return { kind: 'tray' };
@@ -114,16 +142,55 @@ export default function App() {
     if (!canvasRect || !inside(canvasRect, clientX, clientY)) return null;
     const wx = (clientX - canvasRect.left - view.x) / view.zoom;
     const wy = (clientY - canvasRect.top - view.y) / view.zoom;
-    const grabDx = grabFx * module.hp * HP_PX;
 
     // Later cases render on top, so test them first.
     for (const c of [...state.cases].reverse()) {
-      const slot = pointToSlot(c, wx, wy, module.hp, grabDx);
+      const slot = pointToSlot(c, wx, wy, module, rotation, grabFx);
       if (!slot) continue;
-      const col = module.is1u ? null : nearestFreeCol(state.modules, c, slot.row, slot.col, module.hp, module.id);
-      return { kind: 'case', caseId: c.id, row: slot.row, col: col ?? slot.col, valid: col !== null };
+      const suits = allowedRotations(module, rowTypeOf(c, slot.row)).includes(slot.rotation);
+      const col = suits
+        ? nearestFreeCol(
+            state.modules,
+            c,
+            slot.row,
+            slot.col,
+            footprintCols(module, slot.rotation),
+            module.id,
+            // A sideways module is 26 columns wide, so let it hop over a neighbour instead of showing red.
+            isSideways(slot.rotation) ? SIDEWAYS_COLS : undefined,
+          )
+        : null;
+      return { kind: 'case', caseId: c.id, row: slot.row, col: col ?? slot.col, rotation: slot.rotation, valid: col !== null };
     }
     return null;
+  };
+
+  /** The case under the cursor, as a row-drop target; null unless it has the dragged row's width. */
+  const findRowTarget = (clientX: number, clientY: number, from: { caseId: string; row: number }): RowDrag['target'] => {
+    const { state, view } = latest.current;
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    const source = state.cases.find((c) => c.id === from.caseId);
+    if (!canvasRect || !source || !inside(canvasRect, clientX, clientY)) return null;
+    const wx = (clientX - canvasRect.left - view.x) / view.zoom;
+    const wy = (clientY - canvasRect.top - view.y) / view.zoom;
+    // Later cases render on top; the first one under the cursor is the only candidate.
+    const c = [...state.cases].reverse().find((x) => {
+      const { w, h } = caseSize(x);
+      return wx >= x.x && wx <= x.x + w && wy >= x.y && wy <= x.y + h;
+    });
+    if (!c || c.hp !== source.hp) return null;
+    const spot: RowSpot =
+      c.id === source.id
+        ? { kind: 'insert', caseId: c.id, index: rowInsertIndex(c, wy) }
+        : { kind: 'swap', caseId: c.id, row: rowAtY(c, wy) };
+    return { ...spot, valid: reducer(state, rowAction(from, spot)) !== state };
+  };
+
+  const onRowGripPointerDown = (e: React.PointerEvent<HTMLDivElement>, caseId: string, row: number) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setRowDrag({ caseId, row, target: findRowTarget(e.clientX, e.clientY, { caseId, row }) });
   };
 
   const onModulePointerDown = (e: React.PointerEvent<HTMLDivElement>, module: ModuleItem) => {
@@ -146,6 +213,11 @@ export default function App() {
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      const rd = latest.current.rowDrag;
+      if (rd) {
+        setRowDrag({ ...rd, target: findRowTarget(e.clientX, e.clientY, rd) });
+        return;
+      }
       const p = pending.current;
       const current = latest.current.drag;
       if (!p && !current) return;
@@ -153,7 +225,14 @@ export default function App() {
         if (Math.hypot(e.clientX - p.startX, e.clientY - p.startY) < DRAG_THRESHOLD) return;
         pending.current = null;
         setSelectedId(p.module.id);
-        setDrag({ ...p, clientX: e.clientX, clientY: e.clientY, target: findTarget(e.clientX, e.clientY, p.module, p.grabFx) });
+        const rotation = p.module.placement?.rotation ?? 0;
+        setDrag({
+          ...p,
+          rotation,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          target: findTarget(e.clientX, e.clientY, p.module, p.grabFx, rotation),
+        });
         return;
       }
       if (current) {
@@ -161,12 +240,19 @@ export default function App() {
           ...current,
           clientX: e.clientX,
           clientY: e.clientY,
-          target: findTarget(e.clientX, e.clientY, current.module, current.grabFx),
+          target: findTarget(e.clientX, e.clientY, current.module, current.grabFx, current.rotation),
         });
       }
     };
 
     const onUp = () => {
+      const rd = latest.current.rowDrag;
+      if (rd) {
+        setRowDrag(null);
+        const t = rd.target;
+        if (t?.valid) dispatch(rowAction(rd, t));
+        return;
+      }
       const p = pending.current;
       if (p) {
         // A click without movement just selects.
@@ -181,7 +267,8 @@ export default function App() {
       if (t?.kind === 'tray' && d.module.placement) {
         dispatch({ type: 'placeModule', id: d.module.id, placement: null });
       } else if (t?.kind === 'case' && t.valid) {
-        dispatch({ type: 'placeModule', id: d.module.id, placement: { caseId: t.caseId, row: t.row, col: t.col } });
+        const placement = { caseId: t.caseId, row: t.row, col: t.col, ...(t.rotation ? { rotation: t.rotation } : {}) };
+        dispatch({ type: 'placeModule', id: d.module.id, placement });
       }
     };
 
@@ -197,9 +284,22 @@ export default function App() {
       } else if (!mod && e.key.toLowerCase() === 'l' && selectedRef.current) {
         const m = latest.current.state.modules.find((x) => x.id === selectedRef.current);
         if (m?.placement) dispatch({ type: 'setLocked', id: m.id, locked: !m.locked });
+      } else if (!mod && e.key.toLowerCase() === 'r') {
+        const { state, drag } = latest.current;
+        if (drag) {
+          // Mid-drag: turn the module as it would sit in the row under the cursor.
+          const t = drag.target?.kind === 'case' ? drag.target : null;
+          const c = t && state.cases.find((x) => x.id === t.caseId);
+          const rowType: RowType | null = c && t ? rowTypeOf(c, t.row) : null;
+          const rotation = nextRotation(drag.module, rowType, t ? t.rotation : drag.rotation);
+          setDrag({ ...drag, rotation, target: findTarget(drag.clientX, drag.clientY, drag.module, drag.grabFx, rotation) });
+        } else if (selectedRef.current) {
+          dispatch({ type: 'rotateModule', id: selectedRef.current });
+        }
       } else if (e.key === 'Escape') {
         pending.current = null;
         setDrag(null);
+        setRowDrag(null);
         setSelectedId(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
         e.preventDefault();
@@ -228,17 +328,27 @@ export default function App() {
 
   const previewFor = (caseId: string): DropPreview | null =>
     drag?.target?.kind === 'case' && drag.target.caseId === caseId
-      ? { module: drag.module, row: drag.target.row, col: drag.target.col, valid: drag.target.valid }
+      ? {
+          module: drag.module,
+          row: drag.target.row,
+          col: drag.target.col,
+          rotation: drag.target.rotation,
+          valid: drag.target.valid,
+        }
       : null;
 
   const ghostSnapped = drag?.target?.kind === 'case' && drag.target.valid;
-  const ghostW = (drag?.module.hp ?? 0) * HP_PX * view.zoom;
-  const ghostH = ROW_PX * view.zoom;
+  const ghostRotation = drag?.target?.kind === 'case' ? drag.target.rotation : (drag?.rotation ?? 0);
+  // The free-floating ghost is the panel itself, turned: a sideways 3U panel is ROW_PX wide and hp*HP_PX tall.
+  const ghostLong = (drag?.module.is1u ? ROW_1U_PX : ROW_PX) * view.zoom;
+  const ghostShort = (drag?.module.hp ?? 0) * HP_PX * view.zoom;
+  const ghostW = isSideways(ghostRotation) ? ghostLong : ghostShort;
+  const ghostH = isSideways(ghostRotation) ? ghostShort : ghostLong;
 
   const editingCase = state.cases.find((c) => c.id === editingCaseId) ?? null;
 
   return (
-    <div className={`flex h-full ${drag ? 'cursor-grabbing select-none' : ''}`}>
+    <div className={`flex h-full ${drag || rowDrag ? 'cursor-grabbing select-none' : ''}`}>
       <Sidebar
         state={state}
         dispatch={dispatch}
@@ -259,8 +369,12 @@ export default function App() {
               zoom={view.zoom}
               preview={previewFor(c.id)}
               draggingId={drag?.module.id ?? null}
+              draggingRow={rowDrag?.caseId === c.id ? rowDrag.row : null}
+              rowInsert={rowDrag?.target?.kind === 'insert' && rowDrag.target.caseId === c.id ? rowDrag.target : null}
+              rowSwap={rowDrag?.target?.kind === 'swap' && rowDrag.target.caseId === c.id ? rowDrag.target : null}
               selectedId={selectedId}
               onModulePointerDown={onModulePointerDown}
+              onRowGripPointerDown={onRowGripPointerDown}
               onMove={(id, x, y) => dispatch({ type: 'updateCase', id, patch: { x, y } })}
               onEdit={setEditingCaseId}
               onDelete={(id) => {
@@ -310,7 +424,7 @@ export default function App() {
           className="pointer-events-none fixed z-50 opacity-70 shadow-2xl"
           style={{ left: drag.clientX - drag.grabFx * ghostW, top: drag.clientY - drag.grabFy * ghostH }}
         >
-          <ModulePanel module={drag.module} width={ghostW} height={ghostH} />
+          <ModulePanel module={drag.module} width={ghostW} height={ghostH} rotation={ghostRotation} scale={view.zoom} />
         </div>
       )}
 
@@ -386,7 +500,9 @@ function EditCaseDialog({
   const [name, setName] = useState(c.name);
   const [rows, setRows] = useState(c.rows);
   const [hp, setHp] = useState(c.hp);
-  const outOfBounds = modules.filter((m) => isOutOfBounds(m, { id: c.id, rows, hp }));
+  const [rowTypes, setRowTypes] = useState<RowType[]>(() => Array.from({ length: c.rows }, (_, i) => rowTypeOf(c, i + 1)));
+  const types = Array.from({ length: rows }, (_, i) => rowTypes[i] ?? '3U');
+  const outOfBounds = modules.filter((m) => isOutOfBounds(m, { id: c.id, rows, hp, rowTypes: types }));
   const evicted = outOfBounds.length;
   const lockedEvicted = outOfBounds.filter((m) => m.locked).length;
   const input =
@@ -399,7 +515,7 @@ function EditCaseDialog({
         onPointerDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault();
-          onSave({ name: name.trim() || c.name, rows, hp });
+          onSave({ name: name.trim() || c.name, rows, hp, rowTypes: types });
         }}
       >
         <h2 className="text-sm font-semibold text-neutral-100">Edit case</h2>
@@ -409,7 +525,7 @@ function EditCaseDialog({
         </label>
         <div className="flex gap-2">
           <label className="flex-1 text-xs text-neutral-400">
-            Rows (3U)
+            Rows
             <input
               type="number"
               min={1}
@@ -430,6 +546,24 @@ function EditCaseDialog({
               onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
             />
           </label>
+        </div>
+        <div className="text-xs text-neutral-400">
+          Row heights
+          <div className="mt-1 flex flex-wrap gap-1">
+            {types.map((t, i) => (
+              <button
+                key={i}
+                type="button"
+                title="Toggle 3U / 1U"
+                className={`rounded px-2 py-0.5 text-xs ${
+                  t === '1U' ? 'bg-sky-700 text-white' : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-700'
+                }`}
+                onClick={() => setRowTypes(types.map((x, j) => (j === i ? (x === '1U' ? '3U' : '1U') : x)))}
+              >
+                {i + 1}: {t}
+              </button>
+            ))}
+          </div>
         </div>
         {lockedEvicted > 0 ? (
           <p className="text-xs text-red-400">

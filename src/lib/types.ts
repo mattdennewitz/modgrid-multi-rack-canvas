@@ -42,10 +42,17 @@ export interface ImportedRack {
   modules: ImportedModule[];
 }
 
+export type RowType = '3U' | '1U';
+
+/** Clockwise rotation of a panel in degrees. */
+export type Rotation = 0 | 90 | 180 | 270;
+
 export interface Placement {
   caseId: string;
   row: number;
   col: number;
+  /** Missing means 0. */
+  rotation?: Rotation;
 }
 
 export interface ModuleItem {
@@ -74,6 +81,8 @@ export interface CaseItem {
   name: string;
   rows: number;
   hp: number;
+  /** One entry per row; missing means every row is 3U. */
+  rowTypes?: RowType[];
   x: number;
   y: number;
 }
