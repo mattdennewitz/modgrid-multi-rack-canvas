@@ -22,12 +22,15 @@ export function footprintCols(m: Pick<ModuleItem, 'hp'>, rotation: Rotation | un
   return isSideways(rotation) ? SIDEWAYS_COLS : m.hp;
 }
 
-/** Nearest legal rotation in `rowType`, keeping a 180/270 flip; null when the module can't go in that row. */
+/**
+ * `current` if it is legal in `rowType`, otherwise the row's default orientation (upright in a 3U row, 90° in a 1U row)
+ * so a module changing row type never carries over a rotation from the old row. Null when it can't go in that row.
+ */
 export function snapRotation(m: Mountable, rowType: RowType, current: Rotation): Rotation | null {
   const allowed = allowedRotations(m, rowType);
   if (allowed.length === 0) return null;
   if (allowed.includes(current)) return current;
-  return allowed[current >= 180 ? 1 : 0];
+  return allowed[0];
 }
 
 /** What R does: the next 90° step that is legal in `rowType`, or a plain 90° step when there is no row. */

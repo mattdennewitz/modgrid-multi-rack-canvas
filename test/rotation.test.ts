@@ -34,15 +34,18 @@ describe('footprintCols', () => {
 });
 
 describe('snapRotation', () => {
-  it('turns a narrow module sideways over a 1U row, keeping the flip', () => {
-    expect(snapRotation(m3(2), '1U', 0)).toBe(90);
-    expect(snapRotation(m3(2), '1U', 180)).toBe(270);
+  it('keeps a rotation that is already legal in the row', () => {
     expect(snapRotation(m3(2), '1U', 90)).toBe(90);
+    expect(snapRotation(m3(2), '1U', 270)).toBe(270);
+    expect(snapRotation(m3(2), '3U', 0)).toBe(0);
+    expect(snapRotation(m3(2), '3U', 180)).toBe(180);
   });
 
-  it('stands a sideways module back up over a 3U row, keeping the flip', () => {
+  it("uses the row's default orientation when the old rotation doesn't apply", () => {
+    expect(snapRotation(m3(2), '1U', 0)).toBe(90);
+    expect(snapRotation(m3(2), '1U', 180)).toBe(90);
     expect(snapRotation(m3(2), '3U', 90)).toBe(0);
-    expect(snapRotation(m3(2), '3U', 270)).toBe(180);
+    expect(snapRotation(m3(2), '3U', 270)).toBe(0);
   });
 
   it('returns null when the module has no legal rotation in that row', () => {

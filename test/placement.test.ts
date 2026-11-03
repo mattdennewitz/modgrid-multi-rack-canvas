@@ -106,8 +106,8 @@ describe('mixed row heights', () => {
     expect(pointToSlot(mixed, right, y2, plain(2), 0, 0)).toEqual({ row: 2, col: 59, rotation: 90 });
   });
 
-  it('stands it back up over a 3U row, keeping the flip', () => {
-    expect(pointToSlot(mixed, x, y1, plain(2), 270, 0)).toEqual({ row: 1, col: 11, rotation: 180 });
+  it('stands it back up over a 3U row in the normal orientation', () => {
+    expect(pointToSlot(mixed, x, y1, plain(2), 270, 0)).toEqual({ row: 1, col: 11, rotation: 0 });
   });
 
   it('assigns the gap below a row to that row', () => {

@@ -22,7 +22,7 @@ Let a case mix 3U and 1U rows, and let modules be rotated so narrow 3U modules c
 | native 1U | 3U | not allowed |
 | 3U, 1–4HP | 3U sideways | not allowed |
 
-- Snapping: dragging a 1–4HP 3U module over a 1U row snaps it to 90 (keeping 270 if it already had 270). Dragging it over a 3U row snaps it back to an upright rotation (0 or 180).
+- Snapping: dragging a 1–4HP 3U module over a 1U row snaps it to 90 unless it already has a legal rotation there (90 or 270). Dragging it over a 3U row snaps it to 0 unless it already has a legal rotation there (0 or 180). A rotation from the previous row type is never carried over, so moving from a 1U row to a 3U row always gives the normal upright orientation.
 - One module per horizontal span: a sideways module takes the full 1U row height over its 26 columns even if it is only 1HP thick. No stacking within a row.
 
 ## Placement (`placement.ts`)
