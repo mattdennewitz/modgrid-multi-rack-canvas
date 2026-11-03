@@ -149,12 +149,12 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
         value={url}
         onChange={(e) => setUrl(e.target.value)}
       />
-      <div className="flex items-center justify-between gap-2">
+      <div className="space-y-2">
         <Label className="text-xs font-normal">
           <Checkbox checked={createCase} onCheckedChange={(v) => setCreateCase(v === true)} />
           Create a case with this layout <span className="text-muted-foreground">(racks only)</span>
         </Label>
-        <Button size="sm" disabled={busy || !url.trim()}>
+        <Button className="w-full" disabled={busy || !url.trim()}>
           {busy ? 'Importing…' : 'Import'}
         </Button>
       </div>
@@ -184,7 +184,7 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         type="single"
         variant="outline"
         size="sm"
-        className="flex-wrap"
+        className="grid w-full grid-cols-3"
         value={CASE_PRESETS.some((p) => p.rows === rows && p.hp === hp) ? `${rows}x${hp}` : ''}
         onValueChange={(v) => {
           const p = CASE_PRESETS.find((x) => `${x.rows}x${x.hp}` === v);
@@ -195,14 +195,14 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
         }}
       >
         {CASE_PRESETS.map((p) => (
-          <ToggleGroupItem key={`${p.rows}x${p.hp}`} value={`${p.rows}x${p.hp}`} className="text-xs">
+          <ToggleGroupItem key={`${p.rows}x${p.hp}`} value={`${p.rows}x${p.hp}`} className="text-xs tabular-nums data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
             {p.rows}×{p.hp}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
       <Input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
       <div className="flex items-end gap-2">
-        <Label className="flex-1 flex-col items-stretch text-xs font-normal text-muted-foreground">
+        <Label className="flex-1 flex-col items-stretch gap-1.5 text-xs font-normal text-muted-foreground">
           Rows (3U)
           <Input
             type="number"
@@ -212,7 +212,7 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
           />
         </Label>
-        <Label className="flex-1 flex-col items-stretch text-xs font-normal text-muted-foreground">
+        <Label className="flex-1 flex-col items-stretch gap-1.5 text-xs font-normal text-muted-foreground">
           Width (HP)
           <Input
             type="number"
@@ -222,7 +222,7 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
             onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
           />
         </Label>
-        <Button size="sm">Add</Button>
+        <Button>Add</Button>
       </div>
     </form>
   );
@@ -398,9 +398,9 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
   const selectedCase = selected?.placement ? state.cases.find((c) => c.id === selected.placement!.caseId) : null;
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r border bg-card/60">
-      <header className="border-b border px-4 py-3">
-        <h1 className="text-base font-semibold text-foreground">Rack Canvas</h1>
+    <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-card/60">
+      <header className="border-b px-4 py-3">
+        <h1 className="text-sm font-semibold tracking-tight text-foreground">Rack Canvas</h1>
         <p className="text-xs text-muted-foreground">All your cases, one view.</p>
       </header>
       <Section title="Import from ModularGrid">
@@ -453,7 +453,7 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
                 onValueChange={(v) => v && setSize(v as typeof size)}
               >
                 {TRAY_SIZES.map((s) => (
-                  <ToggleGroupItem key={s.value} value={s.value} className="flex-1">
+                  <ToggleGroupItem key={s.value} value={s.value} className="flex-1 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                     {s.label}
                   </ToggleGroupItem>
                 ))}
