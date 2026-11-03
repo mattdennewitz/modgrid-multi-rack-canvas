@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { CASE_PAD, HP_PX, ROW_PX, caseSize, colLeft, rowTop, snapToGrid } from '../lib/geometry';
+import { CASE_PAD, HP_PX, ROW_PX, caseSize, colLeft, rowHeight, rowTop, rowTypeOf, snapToGrid } from '../lib/geometry';
 import { sumPower } from '../lib/modulargrid';
 import { rowGaps } from '../lib/placement';
 import type { CaseItem, ModuleItem } from '../lib/types';
@@ -36,14 +36,24 @@ function LockBadge() {
 }
 
 /** Free-HP label centred in an empty stretch of a row; sized to stay readable when zoomed out. */
-function GapLabel({ row, gap, zoom }: { row: number; gap: { col: number; hp: number }; zoom: number }) {
+function GapLabel({
+  top,
+  height,
+  gap,
+  zoom,
+}: {
+  top: number;
+  height: number;
+  gap: { col: number; hp: number };
+  zoom: number;
+}) {
   const width = gap.hp * HP_PX;
   const vertical = gap.hp < 4;
   const fontSize = Math.min(12 / zoom, vertical ? width * 0.8 : 28);
   return (
     <div
       className="pointer-events-none absolute flex items-center justify-center"
-      style={{ left: CASE_PAD + colLeft(gap.col), top: rowTop(row), width, height: ROW_PX }}
+      style={{ left: CASE_PAD + colLeft(gap.col), top, width, height }}
     >
       <span
         className="rounded-sm bg-black/60 font-medium whitespace-nowrap text-neutral-400 tabular-nums"
@@ -144,12 +154,25 @@ export function CaseView({
         <div
           key={i}
           className="rack-row absolute"
-          style={{ left: CASE_PAD, top: rowTop(i + 1), width: c.hp * HP_PX, height: ROW_PX }}
+          style={{
+            left: CASE_PAD,
+            top: rowTop(c, i + 1),
+            width: c.hp * HP_PX,
+            height: rowHeight(rowTypeOf(c, i + 1)),
+          }}
         />
       ))}
 
       {Array.from({ length: c.rows }, (_, i) =>
-        rowGaps(modules, c, i + 1).map((g) => <GapLabel key={`${i}:${g.col}`} row={i + 1} gap={g} zoom={zoom} />),
+        rowGaps(modules, c, i + 1).map((g) => (
+          <GapLabel
+            key={`${i}:${g.col}`}
+            top={rowTop(c, i + 1)}
+            height={rowHeight(rowTypeOf(c, i + 1))}
+            gap={g}
+            zoom={zoom}
+          />
+        )),
       )}
 
       {modules.map((m) => {
@@ -163,7 +186,7 @@ export function CaseView({
             className={`absolute ${m.locked ? 'cursor-default' : 'cursor-grab'} ${
               m.id === draggingId ? 'opacity-25' : ''
             } ${m.id === selectedId ? 'z-10 outline-2 outline-sky-400' : ''}`}
-            style={{ left: CASE_PAD + colLeft(p.col), top: rowTop(p.row) }}
+            style={{ left: CASE_PAD + colLeft(p.col), top: rowTop(c, p.row) }}
             onPointerDown={(e) => onModulePointerDown(e, m)}
           >
             {m.locked && <LockBadge />}
@@ -178,7 +201,7 @@ export function CaseView({
           }`}
           style={{
             left: CASE_PAD + colLeft(preview.col),
-            top: rowTop(preview.row),
+            top: rowTop(c, preview.row),
             width: preview.module.hp * HP_PX,
             height: ROW_PX,
           }}

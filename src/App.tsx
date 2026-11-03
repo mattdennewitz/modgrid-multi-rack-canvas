@@ -114,11 +114,10 @@ export default function App() {
     if (!canvasRect || !inside(canvasRect, clientX, clientY)) return null;
     const wx = (clientX - canvasRect.left - view.x) / view.zoom;
     const wy = (clientY - canvasRect.top - view.y) / view.zoom;
-    const grabDx = grabFx * module.hp * HP_PX;
 
     // Later cases render on top, so test them first.
     for (const c of [...state.cases].reverse()) {
-      const slot = pointToSlot(c, wx, wy, module.hp, grabDx);
+      const slot = pointToSlot(c, wx, wy, module, 0, grabFx);
       if (!slot) continue;
       const col = module.is1u ? null : nearestFreeCol(state.modules, c, slot.row, slot.col, module.hp, module.id);
       return { kind: 'case', caseId: c.id, row: slot.row, col: col ?? slot.col, valid: col !== null };

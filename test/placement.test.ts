@@ -1,12 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { caseSize, pointToSlot, rowTop, CASE_PAD, HP_PX } from '../src/lib/geometry';
+import {
+  CASE_PAD,
+  HEADER_PX,
+  HP_PX,
+  ROW_1U_PX,
+  ROW_GAP,
+  ROW_PX,
+  caseSize,
+  pointToSlot,
+  rowTop,
+  rowTypeOf,
+} from '../src/lib/geometry';
 import { fits, nearestFreeCol, rowGaps } from '../src/lib/placement';
+import type { RowType } from '../src/lib/types';
 
 const c = { id: 'c1', name: 'Case', rows: 2, hp: 84, x: 100, y: 50 };
 const placed = [
   { id: 'a', hp: 10, placement: { caseId: 'c1', row: 1, col: 11 } }, // occupies 11..20
   { id: 'b', hp: 4, placement: { caseId: 'other', row: 1, col: 1 } },
 ];
+
+const plain = (hp: number) => ({ hp, is1u: false });
 
 describe('fits', () => {
   it('rejects out of bounds', () => {
@@ -48,20 +62,58 @@ describe('nearestFreeCol', () => {
 describe('pointToSlot', () => {
   it('maps world coordinates to snapped row/col', () => {
     const x = c.x + CASE_PAD + 20 * HP_PX + 3; // just past HP 21
-    expect(pointToSlot(c, x, c.y + rowTop(1) + 10, 4, 0)).toEqual({ row: 1, col: 21 });
-    expect(pointToSlot(c, x, c.y + rowTop(2) + 10, 4, 0)).toEqual({ row: 2, col: 21 });
+    expect(pointToSlot(c, x, c.y + rowTop(c, 1) + 10, plain(4), 0, 0)).toEqual({ row: 1, col: 21, rotation: 0 });
+    expect(pointToSlot(c, x, c.y + rowTop(c, 2) + 10, plain(4), 0, 0)).toEqual({ row: 2, col: 21, rotation: 0 });
   });
 
   it('accounts for grab offset and clamps to the case', () => {
     const x = c.x + CASE_PAD + 2 * HP_PX;
-    expect(pointToSlot(c, x, c.y + rowTop(1) + 10, 8, 40)).toEqual({ row: 1, col: 1 });
+    // Grabbed halfway across an 8HP module (40px in).
+    expect(pointToSlot(c, x, c.y + rowTop(c, 1) + 10, plain(8), 0, 0.5)).toEqual({ row: 1, col: 1, rotation: 0 });
     const right = c.x + caseSize(c).w - 1;
-    expect(pointToSlot(c, right, c.y + rowTop(1) + 10, 8, 0)).toEqual({ row: 1, col: 77 });
+    expect(pointToSlot(c, right, c.y + rowTop(c, 1) + 10, plain(8), 0, 0)).toEqual({ row: 1, col: 77, rotation: 0 });
   });
 
   it('returns null outside the case', () => {
-    expect(pointToSlot(c, c.x - 1, c.y + 100, 4, 0)).toBeNull();
-    expect(pointToSlot(c, c.x + 10, c.y + caseSize(c).h + 1, 4, 0)).toBeNull();
+    expect(pointToSlot(c, c.x - 1, c.y + 100, plain(4), 0, 0)).toBeNull();
+    expect(pointToSlot(c, c.x + 10, c.y + caseSize(c).h + 1, plain(4), 0, 0)).toBeNull();
+  });
+});
+
+describe('mixed row heights', () => {
+  const mixed = { ...c, rowTypes: ['3U', '1U'] as RowType[] };
+  const x = mixed.x + CASE_PAD + 10 * HP_PX;
+  const y1 = mixed.y + rowTop(mixed, 1) + 10;
+  const y2 = mixed.y + rowTop(mixed, 2) + 10;
+
+  it('reads row types, defaulting to 3U', () => {
+    expect(rowTypeOf(c, 1)).toBe('3U');
+    expect(rowTypeOf(mixed, 2)).toBe('1U');
+    expect(rowTypeOf(mixed, 3)).toBe('3U');
+  });
+
+  it('stacks rows by their own height', () => {
+    expect(rowTop(mixed, 1)).toBe(HEADER_PX + CASE_PAD);
+    expect(rowTop(mixed, 2)).toBe(HEADER_PX + CASE_PAD + ROW_PX + ROW_GAP);
+    expect(caseSize(mixed).h).toBe(HEADER_PX + CASE_PAD * 2 + ROW_PX + ROW_GAP + ROW_1U_PX);
+    // Unchanged for all-3U cases.
+    expect(caseSize(c).h).toBe(HEADER_PX + CASE_PAD * 2 + 2 * ROW_PX + ROW_GAP);
+  });
+
+  it('snaps a narrow 3U module sideways over a 1U row and clamps its 26 columns inside the case', () => {
+    expect(pointToSlot(mixed, x, y2, plain(2), 0, 0)).toEqual({ row: 2, col: 11, rotation: 90 });
+    const right = mixed.x + caseSize(mixed).w - 1;
+    expect(pointToSlot(mixed, right, y2, plain(2), 0, 0)).toEqual({ row: 2, col: 59, rotation: 90 });
+  });
+
+  it('stands it back up over a 3U row, keeping the flip', () => {
+    expect(pointToSlot(mixed, x, y1, plain(2), 270, 0)).toEqual({ row: 1, col: 11, rotation: 180 });
+  });
+
+  it('assigns the gap below a row to that row', () => {
+    const inGap = mixed.y + rowTop(mixed, 1) + ROW_PX + ROW_GAP - 1;
+    expect(pointToSlot(mixed, x, inGap, plain(4), 0, 0)?.row).toBe(1);
+    expect(pointToSlot(mixed, x, inGap + 1, plain(4), 0, 0)?.row).toBe(2);
   });
 });
 
