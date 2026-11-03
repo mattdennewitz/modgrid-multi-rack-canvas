@@ -34,24 +34,6 @@ npm test         # parser, placement and store tests
 - **Canvas:** scroll to pan, pinch or `⌘`+scroll to zoom, drag empty space to pan. **Fit** frames all cases.
 - **Saving:** the layout autosaves to localStorage. Use **Export**/**Load…** for JSON backups.
 
-## Layout advisor (chat)
-
-Click **Chat** in the toolbar. The advisor sees your current layout every time you send a message: cases,
-rows, modules with HP, depth and power, empty gaps, locks, the tray, and the selected module. It gives advice
-only and can't change the layout. Suggested moves are written as `Move X → case, row, HP a–b` for you to do
-by hand. Chat history is saved in the browser (`rack-canvas:chat:v1`). **Clear** wipes it.
-
-Configure in `.env` (read server-side only; never exposed to the browser):
-
-```sh
-OPENROUTER_API_KEY=...                       # required
-OPENROUTER_MODEL=openai/gpt-6-luna           # optional, any OpenRouter model id
-OPENROUTER_MAX_TOKENS=16000                  # optional cap; reasoning and answer share it
-OPENROUTER_REASONING_EFFORT=medium           # optional: low | medium | high
-```
-
-Values in `.env` take priority over the same variables exported in your shell.
-
 ## How it works
 
 ModularGrid rack pages embed their full state as JSON in `<script data-mg-json="rtd">`. They don't send CORS

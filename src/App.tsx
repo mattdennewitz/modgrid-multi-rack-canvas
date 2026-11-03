@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { Canvas, clampZoom, zoomAt, type View } from './components/Canvas';
 import { CaseView, type DropPreview } from './components/CaseView';
-import { ChatPanel } from './components/ChatPanel';
 import { ModulePanel } from './components/ModulePanel';
 import { Sidebar } from './components/Sidebar';
 import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowAtY, rowInsertIndex, rowTypeOf } from './lib/geometry';
@@ -59,7 +58,6 @@ const rowAction = (from: { caseId: string; row: number }, t: RowSpot): Action =>
     : { type: 'swapRows', aCaseId: from.caseId, aRow: from.row, bCaseId: t.caseId, bRow: t.row };
 
 const DRAG_THRESHOLD = 4;
-const CHAT_OPEN_KEY = 'rack-canvas:chat-open';
 
 const isTyping = (e: KeyboardEvent) =>
   e.target instanceof HTMLElement && (e.target.closest('input, textarea, select') || e.target.isContentEditable);
@@ -81,20 +79,6 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
-  const [chatOpen, setChatOpen] = useState(() => {
-    try {
-      return localStorage.getItem(CHAT_OPEN_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(CHAT_OPEN_KEY, chatOpen ? '1' : '0');
-    } catch {
-      // ignore
-    }
-  }, [chatOpen]);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const trayRef = useRef<HTMLDivElement>(null);
@@ -415,15 +399,8 @@ export default function App() {
             if (r) setView((v) => zoomAt(v, r.width / 2, r.height / 2, factor));
           }}
           onFit={() => fitToContent(state.cases)}
-          chatOpen={chatOpen}
-          onToggleChat={() => setChatOpen((o) => !o)}
         />
       </main>
-
-      {/* Kept mounted while hidden so a reply keeps streaming (and gets saved) after closing. */}
-      <div className={chatOpen ? 'contents' : 'hidden'}>
-        <ChatPanel state={state} selectedId={selectedId} onClose={() => setChatOpen(false)} />
-      </div>
 
       {drag && !ghostSnapped && (
         <div
@@ -479,8 +456,6 @@ function Toolbar(props: {
   onRedo: () => void;
   onZoom: (factor: number) => void;
   onFit: () => void;
-  chatOpen: boolean;
-  onToggleChat: () => void;
 }) {
   return (
     <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-lg backdrop-blur">
@@ -509,12 +484,6 @@ function Toolbar(props: {
       <Tip label="Fit all cases">
         <Button variant="ghost" size="sm" onClick={props.onFit}>
           Fit
-        </Button>
-      </Tip>
-      <Separator orientation="vertical" className="mx-1 h-5" />
-      <Tip label="Layout advisor chat">
-        <Button variant={props.chatOpen ? 'default' : 'ghost'} size="sm" onClick={props.onToggleChat}>
-          Chat
         </Button>
       </Tip>
     </div>
