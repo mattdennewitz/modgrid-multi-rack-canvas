@@ -7,7 +7,9 @@ import {
   ROW_GAP,
   ROW_PX,
   caseSize,
+  insertionLineY,
   pointToSlot,
+  rowInsertIndex,
   rowTop,
   rowTypeOf,
 } from '../src/lib/geometry';
@@ -190,5 +192,29 @@ describe('canPlace', () => {
     expect(canPlace([], mixed, narrow, { row: 2, col: 60, rotation: 90 })).toBe(false); // 60..85
     expect(canPlace([], mixed, narrow, { row: 2, col: 59, rotation: 90 })).toBe(true); // 59..84
     expect(canPlace([], mixed, narrow, { row: 3, col: 1 })).toBe(false);
+  });
+});
+
+describe('row insertion', () => {
+  // Rows start at 50 (3U, midpoint 177.5), 315 (1U, midpoint 359) and 413 (1U, midpoint 457) below the case origin.
+  const three = { ...c, rows: 3, rowTypes: ['3U', '1U', '1U'] as RowType[] };
+  const at = (localY: number) => rowInsertIndex(three, three.y + localY);
+
+  it('inserts before the first row whose midpoint is below the cursor, else at the end', () => {
+    expect(at(0)).toBe(1);
+    expect(at(177)).toBe(1);
+    expect(at(178)).toBe(2);
+    expect(at(358)).toBe(2);
+    expect(at(360)).toBe(3);
+    expect(at(456)).toBe(3);
+    expect(at(458)).toBe(4);
+    expect(at(9999)).toBe(4);
+  });
+
+  it('draws the line in the gap between rows', () => {
+    expect(insertionLineY(three, 1)).toBe(rowTop(three, 1) - ROW_GAP / 2);
+    expect(insertionLineY(three, 2)).toBe(rowTop(three, 1) + ROW_PX + ROW_GAP / 2);
+    expect(insertionLineY(three, 2)).toBe(rowTop(three, 2) - ROW_GAP / 2);
+    expect(insertionLineY(three, 4)).toBe(rowTop(three, 3) + ROW_1U_PX + ROW_GAP / 2);
   });
 });

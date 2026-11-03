@@ -36,6 +36,21 @@ export function rowTop(c: RowLayout, row: number) {
   return top;
 }
 
+/** Insertion point (1 to rows+1) for a row dropped at world-space `wy`: before the first row whose midpoint is below it. */
+export function rowInsertIndex(c: RowLayout & Pick<CaseItem, 'y'>, wy: number) {
+  const localY = wy - c.y;
+  for (let r = 1; r <= c.rows; r++) {
+    if (localY < rowTop(c, r) + rowHeight(rowTypeOf(c, r)) / 2) return r;
+  }
+  return c.rows + 1;
+}
+
+/** Y of the drop indicator at insertion point `index`, relative to the case origin, centred in the gap between rows. */
+export function insertionLineY(c: RowLayout, index: number) {
+  if (index <= c.rows) return rowTop(c, index) - ROW_GAP / 2;
+  return rowTop(c, c.rows) + rowHeight(rowTypeOf(c, c.rows)) + ROW_GAP / 2;
+}
+
 /** Left edge of an HP column, relative to the row. */
 export function colLeft(col: number) {
   return (col - 1) * HP_PX;
