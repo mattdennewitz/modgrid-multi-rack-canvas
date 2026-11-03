@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { CASE_PAD, HP_PX, caseSize, colLeft, rowHeight, rowTop, rowTypeOf, snapToGrid } from '../lib/geometry';
+import { CASE_PAD, HP_PX, caseSize, colLeft, insertionLineY, rowHeight, rowTop, rowTypeOf, snapToGrid } from '../lib/geometry';
 import { sumPower } from '../lib/modulargrid';
 import { rowGaps } from '../lib/placement';
 import { footprintCols } from '../lib/rotation';
@@ -20,8 +20,13 @@ interface Props {
   zoom: number;
   preview: DropPreview | null;
   draggingId: string | null;
+  /** The row being dragged in this case, if any; its modules are dimmed. */
+  draggingRow: number | null;
+  /** Where a dragged row would be inserted in this case, and whether that drop is allowed. */
+  rowInsert: { index: number; valid: boolean } | null;
   selectedId: string | null;
   onModulePointerDown: (e: React.PointerEvent<HTMLDivElement>, m: ModuleItem) => void;
+  onRowGripPointerDown: (e: React.PointerEvent<HTMLDivElement>, caseId: string, row: number) => void;
   onMove: (id: string, x: number, y: number) => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
@@ -77,8 +82,11 @@ export function CaseView({
   zoom,
   preview,
   draggingId,
+  draggingRow,
+  rowInsert,
   selectedId,
   onModulePointerDown,
+  onRowGripPointerDown,
   onMove,
   onEdit,
   onDelete,
@@ -165,6 +173,16 @@ export function CaseView({
         />
       ))}
 
+      {Array.from({ length: c.rows }, (_, i) => (
+        <div
+          key={`grip-${i}`}
+          title="Drag to move this row"
+          className="absolute cursor-grab rounded-sm bg-neutral-600/50 hover:bg-sky-500/70 active:cursor-grabbing"
+          style={{ left: 3, top: rowTop(c, i + 1), width: CASE_PAD - 6, height: rowHeight(rowTypeOf(c, i + 1)) }}
+          onPointerDown={(e) => onRowGripPointerDown(e, c.id, i + 1)}
+        />
+      ))}
+
       {Array.from({ length: c.rows }, (_, i) =>
         rowGaps(modules, c, i + 1).map((g) => (
           <GapLabel
@@ -188,7 +206,7 @@ export function CaseView({
             height={rowHeight(rowTypeOf(c, p.row))}
             rotation={rotation}
             className={`absolute ${m.locked ? 'cursor-default' : 'cursor-grab'} ${
-              m.id === draggingId ? 'opacity-25' : ''
+              m.id === draggingId || p.row === draggingRow ? 'opacity-25' : ''
             } ${m.id === selectedId ? 'z-10 outline-2 outline-sky-400' : ''}`}
             style={{ left: CASE_PAD + colLeft(p.col), top: rowTop(c, p.row) }}
             onPointerDown={(e) => onModulePointerDown(e, m)}
@@ -220,6 +238,13 @@ export function CaseView({
             />
           )}
         </div>
+      )}
+
+      {rowInsert && (
+        <div
+          className={`pointer-events-none absolute z-30 h-1 rounded ${rowInsert.valid ? 'bg-emerald-400' : 'bg-red-500'}`}
+          style={{ left: CASE_PAD, top: insertionLineY(c, rowInsert.index) - 2, width: c.hp * HP_PX }}
+        />
       )}
     </div>
   );

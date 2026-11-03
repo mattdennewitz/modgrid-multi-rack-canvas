@@ -4,10 +4,10 @@ import { CaseView, type DropPreview } from './components/CaseView';
 import { ChatPanel } from './components/ChatPanel';
 import { ModulePanel } from './components/ModulePanel';
 import { Sidebar } from './components/Sidebar';
-import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowTypeOf } from './lib/geometry';
+import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowInsertIndex, rowTypeOf } from './lib/geometry';
 import { nearestFreeCol } from './lib/placement';
 import { SIDEWAYS_COLS, allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
-import { historyReducer, isOutOfBounds, loadState, saveState, type Action } from './lib/store';
+import { historyReducer, isOutOfBounds, loadState, reducer, saveState, type Action } from './lib/store';
 import type { AppState, CaseItem, ModuleItem, Rotation, RowType } from './lib/types';
 
 type DropTarget =
@@ -35,6 +35,13 @@ interface PendingDrag {
   grabFy: number;
 }
 
+interface RowDrag {
+  caseId: string;
+  row: number;
+  /** The insertion point under the cursor, or null when it isn't over a case of the same width. */
+  target: { caseId: string; index: number; valid: boolean } | null;
+}
+
 const DRAG_THRESHOLD = 4;
 const CHAT_OPEN_KEY = 'rack-canvas:chat-open';
 
@@ -54,6 +61,7 @@ export default function App() {
 
   const [view, setView] = useState<View>({ x: 40, y: 40, zoom: 0.6 });
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [rowDrag, setRowDrag] = useState<RowDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(() => {
@@ -76,8 +84,8 @@ export default function App() {
   const pending = useRef<PendingDrag | null>(null);
 
   // Window listeners read the latest values through this ref instead of re-binding every render.
-  const latest = useRef({ state, view, drag });
-  latest.current = { state, view, drag };
+  const latest = useRef({ state, view, drag, rowDrag });
+  latest.current = { state, view, drag, rowDrag };
 
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
@@ -149,6 +157,32 @@ export default function App() {
     return null;
   };
 
+  /** The case under the cursor, as a row-drop target; null unless it has the dragged row's width. */
+  const findRowTarget = (clientX: number, clientY: number, from: { caseId: string; row: number }): RowDrag['target'] => {
+    const { state, view } = latest.current;
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    const source = state.cases.find((c) => c.id === from.caseId);
+    if (!canvasRect || !source || !inside(canvasRect, clientX, clientY)) return null;
+    const wx = (clientX - canvasRect.left - view.x) / view.zoom;
+    const wy = (clientY - canvasRect.top - view.y) / view.zoom;
+    // Later cases render on top; the first one under the cursor is the only candidate.
+    const c = [...state.cases].reverse().find((x) => {
+      const { w, h } = caseSize(x);
+      return wx >= x.x && wx <= x.x + w && wy >= x.y && wy <= x.y + h;
+    });
+    if (!c || c.hp !== source.hp) return null;
+    const index = rowInsertIndex(c, wy);
+    const move: Action = { type: 'moveRow', fromCaseId: from.caseId, fromRow: from.row, toCaseId: c.id, toIndex: index };
+    return { caseId: c.id, index, valid: reducer(state, move) !== state };
+  };
+
+  const onRowGripPointerDown = (e: React.PointerEvent<HTMLDivElement>, caseId: string, row: number) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    setRowDrag({ caseId, row, target: findRowTarget(e.clientX, e.clientY, { caseId, row }) });
+  };
+
   const onModulePointerDown = (e: React.PointerEvent<HTMLDivElement>, module: ModuleItem) => {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -169,6 +203,11 @@ export default function App() {
 
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      const rd = latest.current.rowDrag;
+      if (rd) {
+        setRowDrag({ ...rd, target: findRowTarget(e.clientX, e.clientY, rd) });
+        return;
+      }
       const p = pending.current;
       const current = latest.current.drag;
       if (!p && !current) return;
@@ -197,6 +236,15 @@ export default function App() {
     };
 
     const onUp = () => {
+      const rd = latest.current.rowDrag;
+      if (rd) {
+        setRowDrag(null);
+        const t = rd.target;
+        if (t?.valid) {
+          dispatch({ type: 'moveRow', fromCaseId: rd.caseId, fromRow: rd.row, toCaseId: t.caseId, toIndex: t.index });
+        }
+        return;
+      }
       const p = pending.current;
       if (p) {
         // A click without movement just selects.
@@ -243,6 +291,7 @@ export default function App() {
       } else if (e.key === 'Escape') {
         pending.current = null;
         setDrag(null);
+        setRowDrag(null);
         setSelectedId(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
         e.preventDefault();
@@ -291,7 +340,7 @@ export default function App() {
   const editingCase = state.cases.find((c) => c.id === editingCaseId) ?? null;
 
   return (
-    <div className={`flex h-full ${drag ? 'cursor-grabbing select-none' : ''}`}>
+    <div className={`flex h-full ${drag || rowDrag ? 'cursor-grabbing select-none' : ''}`}>
       <Sidebar
         state={state}
         dispatch={dispatch}
@@ -312,8 +361,11 @@ export default function App() {
               zoom={view.zoom}
               preview={previewFor(c.id)}
               draggingId={drag?.module.id ?? null}
+              draggingRow={rowDrag?.caseId === c.id ? rowDrag.row : null}
+              rowInsert={rowDrag?.target?.caseId === c.id ? rowDrag.target : null}
               selectedId={selectedId}
               onModulePointerDown={onModulePointerDown}
+              onRowGripPointerDown={onRowGripPointerDown}
               onMove={(id, x, y) => dispatch({ type: 'updateCase', id, patch: { x, y } })}
               onEdit={setEditingCaseId}
               onDelete={(id) => {
