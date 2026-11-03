@@ -35,7 +35,7 @@ Let a case mix 3U and 1U rows, and let modules be rotated so narrow 3U modules c
 
 - `placeModule` carries `rotation` through `Placement`.
 - `updateCase` accepts `rowTypes`. Changing a row type or shrinking the case evicts modules whose placement no longer fits to the tray. A locked module that would be evicted blocks the change, matching today's resize rule.
-- New action `rotateModule { id, step }` rotates a placed module by 90°, skipping to the next rotation that is valid for its row, and only if it still fits. No-op for locked modules and when nothing valid fits.
+- New action `rotateModule { id }` moves a placed module to the next 90° step that is valid for its row (0↔180 in 3U rows, 90↔270 in 1U rows). Both rotations in a row type have the same width, so it can't collide. No-op for locked and unplaced modules and when nothing valid exists.
 - `addCase` and `importRack` produce no `rowTypes` (all 3U) unless specified.
 
 ## UI

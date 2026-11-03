@@ -19,13 +19,13 @@ npm test         # parser, placement and store tests
   module's page, fetched once and cached in `.cache/modulargrid/`, so the first import of ~70 modules takes about
   a minute and later ones are instant.
 - **Cases:** add one from a preset or with custom rows and HP. Drag the header to move it. Double-click the
-  header (or click **Edit**) to rename or resize. If you shrink a case, modules that no longer fit go to the tray.
+  header (or click **Edit**) to rename or resize. If you shrink a case, modules that no longer fit go to the tray. **Edit** also sets each row to 3U or 1U; changing a row's type sends modules that don't suit it to the tray.
 - **Modules:** drag between cases and the tray. Modules snap to the 1HP grid. If you drop on an occupied
-  spot, the module shifts to the nearest free gap within 12HP. A red outline means it won't fit.
+  spot, the module shifts to the nearest free gap within 12HP. A red outline means it won't fit. 1U modules go in 1U rows. A 1–4HP 3U module snaps sideways into a 1U row (it then spans 26HP, one module per span), and 3U modules can be flipped 180° in 3U rows.
 - **Locks:** select a placed module and press `L` (or **Lock** in the sidebar) to pin it. A locked module can't
   be dragged, sent to the tray or removed, and a case can't be resized in a way that would push it out. It
   moves with its case. Deleting the case unlocks it.
-- **Keys:** `⌘Z` / `⇧⌘Z` undo/redo. `L` toggles the lock. `Delete` sends the selected module to the tray, and pressing it again
+- **Keys:** `⌘Z` / `⇧⌘Z` undo/redo. `L` toggles the lock. `R` rotates the selected module, or the one being dragged: 0°↔180° in 3U rows, 90°↔270° in 1U rows. `Delete` sends the selected module to the tray, and pressing it again
   removes the module. `Esc` cancels a drag.
 - **Canvas:** scroll to pan, pinch or `⌘`+scroll to zoom, drag empty space to pan. **Fit** frames all cases.
 - **Saving:** the layout autosaves to localStorage. Use **Export**/**Load…** for JSON backups.
