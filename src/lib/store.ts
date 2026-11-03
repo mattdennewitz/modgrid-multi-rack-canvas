@@ -1,6 +1,7 @@
-import { caseSize } from './geometry';
-import { fits } from './placement';
-import type { AppState, CaseItem, CollectionModule, ImportedRack, ModuleItem, Placement } from './types';
+import { caseSize, rowTypeOf } from './geometry';
+import { canPlace } from './placement';
+import { allowedRotations, footprintCols, nextRotation } from './rotation';
+import type { AppState, CaseItem, CollectionModule, ImportedRack, ModuleItem, Placement, RowType } from './types';
 
 export type Action =
   | { type: 'importRack'; rack: ImportedRack; createCase: boolean }
@@ -11,6 +12,7 @@ export type Action =
   | { type: 'placeModule'; id: string; placement: Placement | null }
   | { type: 'duplicateModule'; id: string }
   | { type: 'setLocked'; id: string; locked: boolean }
+  | { type: 'rotateModule'; id: string }
   | { type: 'removeModule'; id: string }
   | { type: 'replace'; state: AppState };
 
@@ -25,8 +27,23 @@ function nextCasePosition(cases: CaseItem[]) {
   return { x: Math.min(...cases.map((c) => c.x)), y: bottom + 60 };
 }
 
-export function isOutOfBounds(m: ModuleItem, c: Pick<CaseItem, 'id' | 'rows' | 'hp'>) {
-  return m.placement?.caseId === c.id && (m.placement.row > c.rows || m.placement.col + m.hp - 1 > c.hp);
+/** True when a placed module no longer fits its case: outside it, or in a row type its rotation doesn't suit. */
+export function isOutOfBounds(m: ModuleItem, c: Pick<CaseItem, 'id' | 'rows' | 'hp' | 'rowTypes'>) {
+  const p = m.placement;
+  if (!p || p.caseId !== c.id) return false;
+  const rotation = p.rotation ?? 0;
+  return (
+    p.row > c.rows ||
+    p.col + footprintCols(m, rotation) - 1 > c.hp ||
+    !allowedRotations(m, rowTypeOf(c, p.row)).includes(rotation)
+  );
+}
+
+/** Pads or trims to `rows`; undefined when every row is 3U, so plain cases stay free of the field. */
+function normalizeRowTypes(rowTypes: RowType[] | undefined, rows: number): RowType[] | undefined {
+  if (!rowTypes) return undefined;
+  const out = Array.from({ length: rows }, (_, i) => rowTypes[i] ?? '3U');
+  return out.every((t) => t === '3U') ? undefined : out;
 }
 
 /** Sends modules that no longer fit a resized case back to the tray. */
@@ -60,7 +77,7 @@ export function reducer(state: AppState, action: Action): AppState {
           source: rack.name,
           placement: null,
         };
-        if (newCase && !m.is1u && m.inBounds && fits(added, newCase, m.row, m.col, m.hp)) {
+        if (newCase && m.inBounds && canPlace(added, newCase, item, { row: m.row, col: m.col })) {
           item.placement = { caseId: newCase.id, row: m.row, col: m.col };
         }
         added.push(item);
@@ -94,7 +111,8 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'updateCase': {
       const existing = state.cases.find((c) => c.id === action.id);
       if (!existing) return state;
-      const updated = { ...existing, ...action.patch };
+      const merged = { ...existing, ...action.patch };
+      const updated = { ...merged, rowTypes: normalizeRowTypes(merged.rowTypes, merged.rows) };
       // A resize may not push a locked module out of the case.
       if (state.modules.some((m) => m.locked && isOutOfBounds(m, updated))) return state;
       // Moving a case raises it above the others.
@@ -130,6 +148,20 @@ export function reducer(state: AppState, action: Action): AppState {
           m.id === action.id && (m.placement || !action.locked) ? { ...m, locked: action.locked } : m,
         ),
       };
+    case 'rotateModule': {
+      const m = state.modules.find((x) => x.id === action.id);
+      const p = m?.placement;
+      if (!m || !p || m.locked) return state;
+      const c = state.cases.find((x) => x.id === p.caseId);
+      if (!c) return state;
+      const current = p.rotation ?? 0;
+      const rotation = nextRotation(m, rowTypeOf(c, p.row), current);
+      if (rotation === current) return state;
+      return {
+        ...state,
+        modules: state.modules.map((x) => (x.id === m.id ? { ...x, placement: { ...p, rotation } } : x)),
+      };
+    }
     case 'removeModule':
       if (isLocked(state, action.id)) return state;
       return { ...state, modules: state.modules.filter((m) => m.id !== action.id) };
