@@ -159,6 +159,12 @@ describe('sideways modules', () => {
   it('finds the nearest free column around it', () => {
     expect(nearestFreeCol([side], mixed, 2, 6, 4)).toBe(1);
   });
+
+  it('can search further than the usual 12HP so a sideways module can hop over a neighbour', () => {
+    const other = { id: 'o', hp: 2, placement: { caseId: 'c1', row: 2, col: 30, rotation: 90 as const } }; // 30..55
+    expect(nearestFreeCol([other], mixed, 2, 40, 26)).toBeNull(); // 56 is 16 away
+    expect(nearestFreeCol([other], mixed, 2, 40, 26, undefined, 26)).toBe(56);
+  });
 });
 
 describe('canPlace', () => {

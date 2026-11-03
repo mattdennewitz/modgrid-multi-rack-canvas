@@ -32,7 +32,9 @@ export function ModulePanel({
   const [failed, setFailed] = useState(false);
   const face = failed ? (
     <div className="flex h-full w-full items-center justify-center border border-neutral-500 bg-neutral-700">
-      <span className="rotate-90 whitespace-nowrap text-[10px] text-neutral-200">{module.name}</span>
+      <span className={`${rotation === 90 ? '-rotate-90' : 'rotate-90'} whitespace-nowrap text-[10px] text-neutral-200`}>
+        {module.name}
+      </span>
     </div>
   ) : (
     <img

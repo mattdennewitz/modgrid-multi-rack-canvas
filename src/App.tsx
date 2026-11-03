@@ -6,7 +6,7 @@ import { ModulePanel } from './components/ModulePanel';
 import { Sidebar } from './components/Sidebar';
 import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowTypeOf } from './lib/geometry';
 import { nearestFreeCol } from './lib/placement';
-import { allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
+import { SIDEWAYS_COLS, allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
 import { historyReducer, isOutOfBounds, loadState, saveState, type Action } from './lib/store';
 import type { AppState, CaseItem, ModuleItem, Rotation, RowType } from './lib/types';
 
@@ -133,7 +133,16 @@ export default function App() {
       if (!slot) continue;
       const suits = allowedRotations(module, rowTypeOf(c, slot.row)).includes(slot.rotation);
       const col = suits
-        ? nearestFreeCol(state.modules, c, slot.row, slot.col, footprintCols(module, slot.rotation), module.id)
+        ? nearestFreeCol(
+            state.modules,
+            c,
+            slot.row,
+            slot.col,
+            footprintCols(module, slot.rotation),
+            module.id,
+            // A sideways module is 26 columns wide, so let it hop over a neighbour instead of showing red.
+            isSideways(slot.rotation) ? SIDEWAYS_COLS : undefined,
+          )
         : null;
       return { kind: 'case', caseId: c.id, row: slot.row, col: col ?? slot.col, rotation: slot.rotation, valid: col !== null };
     }
