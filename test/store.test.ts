@@ -211,3 +211,121 @@ describe('1U rows and rotation', () => {
     expect(reducer(t, { type: 'updateCase', id: caseId, patch: { rowTypes: ['1U', '1U'] } })).toBe(t);
   });
 });
+
+describe('moveRow', () => {
+  const mod = (slug: string, hp: number) => ({
+    slug,
+    moduleId: slug,
+    versionId: null,
+    name: slug,
+    vendor: 'V',
+    description: '',
+    hp,
+    depth: 0,
+    is1u: false,
+    power: { plus12: 0, minus12: 0, plus5: 0 },
+  });
+
+  // A: 3 rows ['3U','1U','3U'], one module per row (a1, a2 sideways, a3). B: 2 rows, b1 b2. C: 100HP. D: 1 row.
+  function setup() {
+    let s = emptyState;
+    for (const [name, rows, hp] of [['A', 3, 84], ['B', 2, 84], ['C', 2, 100], ['D', 1, 84]] as const) {
+      s = reducer(s, { type: 'addCase', name, rows, hp });
+    }
+    const [A, B, C, D] = s.cases.map((c) => c.id);
+    s = reducer(s, { type: 'updateCase', id: A, patch: { rowTypes: ['3U', '1U', '3U'] } });
+    s = reducer(s, {
+      type: 'importCollection',
+      source: 't',
+      modules: ['a1', 'a2', 'a3', 'b1', 'b2', 'c1', 'd1'].map((n) => mod(n, n === 'a2' ? 2 : 4)),
+    });
+    const id = (slug: string) => s.modules.find((m) => m.slug === slug)!.id;
+    const put = (slug: string, caseId: string, row: number, rotation?: 90) => {
+      s = reducer(s, { type: 'placeModule', id: id(slug), placement: { caseId, row, col: 1, ...(rotation ? { rotation } : {}) } });
+    };
+    put('a1', A, 1);
+    put('a2', A, 2, 90);
+    put('a3', A, 3);
+    put('b1', B, 1);
+    put('b2', B, 2);
+    put('c1', C, 1);
+    put('d1', D, 1);
+    return { s, A, B, C, D, id };
+  }
+  type S = ReturnType<typeof setup>;
+  const where = (x: S, state: S['s'], slug: string) => {
+    const p = state.modules.find((m) => m.id === x.id(slug))!.placement!;
+    return `${p.caseId === x.A ? 'A' : p.caseId === x.B ? 'B' : '?'}${p.row}`;
+  };
+  const caseOf = (state: S['s'], id: string) => state.cases.find((c) => c.id === id)!;
+
+  it('moves a row down within a case, renumbering the rows it passes', () => {
+    const x = setup();
+    const t = reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 1, toCaseId: x.A, toIndex: 4 });
+    expect(['a1', 'a2', 'a3'].map((n) => where(x, t, n))).toEqual(['A3', 'A1', 'A2']);
+    expect(caseOf(t, x.A).rowTypes).toEqual(['1U', '3U', '3U']);
+    expect(t.modules.find((m) => m.id === x.id('a2'))!.placement!.rotation).toBe(90);
+  });
+
+  it('moves a row up within a case', () => {
+    const x = setup();
+    const t = reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 3, toCaseId: x.A, toIndex: 1 });
+    expect(['a1', 'a2', 'a3'].map((n) => where(x, t, n))).toEqual(['A2', 'A3', 'A1']);
+    expect(caseOf(t, x.A).rowTypes).toEqual(['3U', '3U', '1U']);
+  });
+
+  it('is a no-op when the row would stay where it is', () => {
+    const x = setup();
+    for (const toIndex of [2, 3]) {
+      expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 2, toCaseId: x.A, toIndex })).toBe(x.s);
+    }
+  });
+
+  it('moves a row into another case of the same width, with its type and modules', () => {
+    const x = setup();
+    const t = reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 2, toCaseId: x.B, toIndex: 2 });
+    expect(['a1', 'a3', 'a2', 'b1', 'b2'].map((n) => where(x, t, n))).toEqual(['A1', 'A2', 'B2', 'B1', 'B3']);
+    expect(caseOf(t, x.A).rows).toBe(2);
+    expect(caseOf(t, x.A).rowTypes).toBeUndefined();
+    expect(caseOf(t, x.B).rows).toBe(3);
+    expect(caseOf(t, x.B).rowTypes).toEqual(['3U', '1U', '3U']);
+    expect(t.modules.find((m) => m.id === x.id('a2'))!.placement!.rotation).toBe(90);
+  });
+
+  it('refuses unequal widths, a source with one row, and out-of-range rows', () => {
+    const x = setup();
+    expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 1, toCaseId: x.C, toIndex: 1 })).toBe(x.s);
+    expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.D, fromRow: 1, toCaseId: x.A, toIndex: 1 })).toBe(x.s);
+    expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 4, toCaseId: x.A, toIndex: 1 })).toBe(x.s);
+    expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 1, toCaseId: x.A, toIndex: 5 })).toBe(x.s);
+  });
+
+  describe('with a locked module in A row 3', () => {
+    const lockA3 = () => {
+      const x = setup();
+      return { ...x, s: reducer(x.s, { type: 'setLocked', id: x.id('a3'), locked: true }) };
+    };
+
+    it('allows moves that leave the locked row where it is', () => {
+      const x = lockA3();
+      const t = reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 1, toCaseId: x.A, toIndex: 3 });
+      expect(where(x, t, 'a3')).toBe('A3');
+      expect(where(x, t, 'a1')).toBe('A2');
+      const u = reducer(x.s, { type: 'moveRow', fromCaseId: x.B, fromRow: 1, toCaseId: x.A, toIndex: 4 });
+      expect(where(x, u, 'b1')).toBe('A4');
+    });
+
+    it('refuses moving the locked row itself', () => {
+      const x = lockA3();
+      expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 3, toCaseId: x.A, toIndex: 1 })).toBe(x.s);
+      expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 3, toCaseId: x.B, toIndex: 1 })).toBe(x.s);
+    });
+
+    it('refuses moves that renumber the locked row', () => {
+      const x = lockA3();
+      expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 1, toCaseId: x.A, toIndex: 4 })).toBe(x.s);
+      expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.A, fromRow: 1, toCaseId: x.B, toIndex: 1 })).toBe(x.s); // rows below shift up
+      expect(reducer(x.s, { type: 'moveRow', fromCaseId: x.B, fromRow: 1, toCaseId: x.A, toIndex: 1 })).toBe(x.s); // rows below shift down
+    });
+  });
+});
