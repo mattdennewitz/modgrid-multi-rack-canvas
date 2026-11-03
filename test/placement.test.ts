@@ -11,7 +11,7 @@ import {
   rowTop,
   rowTypeOf,
 } from '../src/lib/geometry';
-import { fits, nearestFreeCol, rowGaps } from '../src/lib/placement';
+import { canPlace, fits, nearestFreeCol, rowGaps } from '../src/lib/placement';
 import type { RowType } from '../src/lib/types';
 
 const c = { id: 'c1', name: 'Case', rows: 2, hp: 84, x: 100, y: 50 };
@@ -135,5 +135,54 @@ describe('rowGaps', () => {
   it('reports nothing for a full row and the whole row when empty', () => {
     expect(rowGaps([{ id: 'x', hp: 84, placement: { caseId: 'c1', row: 1, col: 1 } }], c, 1)).toEqual([]);
     expect(rowGaps([], c, 2)).toEqual([{ col: 1, hp: 84 }]);
+  });
+});
+
+describe('sideways modules', () => {
+  const mixed = { ...c, rowTypes: ['3U', '1U'] as RowType[] };
+  const side = { id: 's', hp: 2, placement: { caseId: 'c1', row: 2, col: 5, rotation: 90 as const } }; // cols 5..30
+
+  it('occupies 26 columns whatever its HP', () => {
+    expect(fits([side], mixed, 2, 30, 4)).toBe(false);
+    expect(fits([side], mixed, 2, 31, 4)).toBe(true);
+    expect(fits([side], mixed, 2, 1, 4)).toBe(true); // 1..4 touches but doesn't overlap
+    expect(fits([side], mixed, 2, 1, 5)).toBe(false);
+  });
+
+  it('is reflected in the gaps around it', () => {
+    expect(rowGaps([side], mixed, 2)).toEqual([
+      { col: 1, hp: 4 },
+      { col: 31, hp: 54 },
+    ]);
+  });
+
+  it('finds the nearest free column around it', () => {
+    expect(nearestFreeCol([side], mixed, 2, 6, 4)).toBe(1);
+  });
+});
+
+describe('canPlace', () => {
+  const mixed = { ...c, rowTypes: ['3U', '1U'] as RowType[] };
+  const narrow = { id: 'n', hp: 2, is1u: false };
+  const wide = { id: 'w', hp: 10, is1u: false };
+  const oneU = { id: 'u', hp: 8, is1u: true };
+  const side = { id: 's', hp: 2, placement: { caseId: 'c1', row: 2, col: 5, rotation: 90 as const } };
+
+  it('follows the rotation table', () => {
+    expect(canPlace([], mixed, narrow, { row: 1, col: 1 })).toBe(true);
+    expect(canPlace([], mixed, narrow, { row: 1, col: 1, rotation: 180 })).toBe(true);
+    expect(canPlace([], mixed, narrow, { row: 1, col: 1, rotation: 90 })).toBe(false);
+    expect(canPlace([], mixed, narrow, { row: 2, col: 1 })).toBe(false);
+    expect(canPlace([], mixed, narrow, { row: 2, col: 1, rotation: 90 })).toBe(true);
+    expect(canPlace([], mixed, wide, { row: 2, col: 1, rotation: 90 })).toBe(false);
+    expect(canPlace([], mixed, oneU, { row: 2, col: 1 })).toBe(true);
+    expect(canPlace([], mixed, oneU, { row: 1, col: 1 })).toBe(false);
+  });
+
+  it('still rejects overlap and overflow', () => {
+    expect(canPlace([side], mixed, narrow, { row: 2, col: 20, rotation: 90 })).toBe(false);
+    expect(canPlace([], mixed, narrow, { row: 2, col: 60, rotation: 90 })).toBe(false); // 60..85
+    expect(canPlace([], mixed, narrow, { row: 2, col: 59, rotation: 90 })).toBe(true); // 59..84
+    expect(canPlace([], mixed, narrow, { row: 3, col: 1 })).toBe(false);
   });
 });
