@@ -4,7 +4,7 @@ import { CaseView, type DropPreview } from './components/CaseView';
 import { ChatPanel } from './components/ChatPanel';
 import { ModulePanel } from './components/ModulePanel';
 import { Sidebar } from './components/Sidebar';
-import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowInsertIndex, rowTypeOf } from './lib/geometry';
+import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowAtY, rowInsertIndex, rowTypeOf } from './lib/geometry';
 import { nearestFreeCol } from './lib/placement';
 import { SIDEWAYS_COLS, allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
 import { historyReducer, isOutOfBounds, loadState, reducer, saveState, type Action } from './lib/store';
@@ -35,12 +35,20 @@ interface PendingDrag {
   grabFy: number;
 }
 
+/** Over its own case a dragged row is reordered (insertion point); over another case it swaps with the row under it. */
+type RowSpot = { kind: 'insert'; caseId: string; index: number } | { kind: 'swap'; caseId: string; row: number };
+
 interface RowDrag {
   caseId: string;
   row: number;
-  /** The insertion point under the cursor, or null when it isn't over a case of the same width. */
-  target: { caseId: string; index: number; valid: boolean } | null;
+  /** The drop under the cursor, or null when it isn't over a case of the same width. */
+  target: (RowSpot & { valid: boolean }) | null;
 }
+
+const rowAction = (from: { caseId: string; row: number }, t: RowSpot): Action =>
+  t.kind === 'insert'
+    ? { type: 'reorderRow', caseId: from.caseId, fromRow: from.row, toIndex: t.index }
+    : { type: 'swapRows', aCaseId: from.caseId, aRow: from.row, bCaseId: t.caseId, bRow: t.row };
 
 const DRAG_THRESHOLD = 4;
 const CHAT_OPEN_KEY = 'rack-canvas:chat-open';
@@ -171,9 +179,11 @@ export default function App() {
       return wx >= x.x && wx <= x.x + w && wy >= x.y && wy <= x.y + h;
     });
     if (!c || c.hp !== source.hp) return null;
-    const index = rowInsertIndex(c, wy);
-    const move: Action = { type: 'moveRow', fromCaseId: from.caseId, fromRow: from.row, toCaseId: c.id, toIndex: index };
-    return { caseId: c.id, index, valid: reducer(state, move) !== state };
+    const spot: RowSpot =
+      c.id === source.id
+        ? { kind: 'insert', caseId: c.id, index: rowInsertIndex(c, wy) }
+        : { kind: 'swap', caseId: c.id, row: rowAtY(c, wy) };
+    return { ...spot, valid: reducer(state, rowAction(from, spot)) !== state };
   };
 
   const onRowGripPointerDown = (e: React.PointerEvent<HTMLDivElement>, caseId: string, row: number) => {
@@ -240,9 +250,7 @@ export default function App() {
       if (rd) {
         setRowDrag(null);
         const t = rd.target;
-        if (t?.valid) {
-          dispatch({ type: 'moveRow', fromCaseId: rd.caseId, fromRow: rd.row, toCaseId: t.caseId, toIndex: t.index });
-        }
+        if (t?.valid) dispatch(rowAction(rd, t));
         return;
       }
       const p = pending.current;
@@ -362,7 +370,8 @@ export default function App() {
               preview={previewFor(c.id)}
               draggingId={drag?.module.id ?? null}
               draggingRow={rowDrag?.caseId === c.id ? rowDrag.row : null}
-              rowInsert={rowDrag?.target?.caseId === c.id ? rowDrag.target : null}
+              rowInsert={rowDrag?.target?.kind === 'insert' && rowDrag.target.caseId === c.id ? rowDrag.target : null}
+              rowSwap={rowDrag?.target?.kind === 'swap' && rowDrag.target.caseId === c.id ? rowDrag.target : null}
               selectedId={selectedId}
               onModulePointerDown={onModulePointerDown}
               onRowGripPointerDown={onRowGripPointerDown}

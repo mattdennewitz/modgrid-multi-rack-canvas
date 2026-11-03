@@ -9,6 +9,7 @@ import {
   caseSize,
   insertionLineY,
   pointToSlot,
+  rowAtY,
   rowInsertIndex,
   rowTop,
   rowTypeOf,
@@ -216,5 +217,22 @@ describe('row insertion', () => {
     expect(insertionLineY(three, 2)).toBe(rowTop(three, 1) + ROW_PX + ROW_GAP / 2);
     expect(insertionLineY(three, 2)).toBe(rowTop(three, 2) - ROW_GAP / 2);
     expect(insertionLineY(three, 4)).toBe(rowTop(three, 3) + ROW_1U_PX + ROW_GAP / 2);
+  });
+});
+
+describe('rowAtY', () => {
+  const three = { ...c, rows: 3, rowTypes: ['3U', '1U', '1U'] as RowType[] };
+  const y = (row: number, dy: number) => three.y + rowTop(three, row) + dy;
+
+  it('finds the row under a point, giving the gap below a row to that row', () => {
+    expect(rowAtY(three, y(1, 10))).toBe(1);
+    expect(rowAtY(three, y(1, ROW_PX + ROW_GAP - 1))).toBe(1);
+    expect(rowAtY(three, y(2, 0))).toBe(2);
+    expect(rowAtY(three, y(3, 40))).toBe(3);
+  });
+
+  it('clamps above the first row and below the last', () => {
+    expect(rowAtY(three, three.y)).toBe(1);
+    expect(rowAtY(three, three.y + 9999)).toBe(3);
   });
 });

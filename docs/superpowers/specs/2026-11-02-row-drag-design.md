@@ -2,40 +2,42 @@
 
 ## Goal
 
-Let a row be dragged to a new position in its own case, or into another case of the same width. The row's modules and its 3U/1U type go with it.
+Let a row be dragged to a new position in its own case, or into another case of the same width. A case's size is predefined, so no case ever gains or loses a row.
+
+## Model
+
+Rows are fixed slots. Dragging moves what is in a row, not the row itself.
+
+- **Within one case:** the row is reordered. The other rows renumber by one, and the row count does not change. No blank rows are added.
+- **Into another case:** the row you drop on and the row you dragged swap contents (their modules, with `col`, `rotation` and `locked`). Dropping on an empty row is a plain move, and the source is left with a blank row where the dragged row was. Neither case changes size.
+- The two rows must be the same type (3U/1U), because a 1U row can't become 3U and a swap must not change any case's height.
 
 ## Interaction
 
-- Every row has a grip strip in the case's left padding (the existing 14px `CASE_PAD` gutter), as tall as the row. Dragging the strip starts a row drag. Module drags and case-header drags are unaffected.
-- While dragging, the source row's modules dim and an insertion line is drawn between rows of the case under the cursor. Green means the drop is allowed, red means it is refused.
-- The insertion point is before the first row whose vertical midpoint is below the cursor, or after the last row.
-- A target must be the same case or a case with the same `hp`. Over a case of a different width there is no line and a drop does nothing. `Esc` cancels. A completed drop is one undo step.
+- Every row has a grip strip in the case's left padding (the existing 14px `CASE_PAD` gutter), as tall as the row. Dragging it starts a row drag. Module drags and case-header drags are unaffected.
+- While dragging, the dragged row's modules dim. Over its own case a green/red insertion line shows where the row would land (before the first row whose midpoint is below the cursor, or after the last). Over another case of the same width the row under the cursor is outlined green/red. Over a case of a different width nothing is shown and a drop does nothing.
+- `Esc` cancels. A completed drop is one undo step.
 
 ## Store
 
-- New action `moveRow { fromCaseId, fromRow, toCaseId, toIndex }`. `toIndex` is the insertion point, 1 to rows+1 of the target, counted before the row is removed.
-- Within one case this is a reorder: the row lands at `toIndex` (minus one when it moves down) and the rows between renumber by one. `toIndex` equal to `fromRow` or `fromRow + 1` is a no-op.
-- Across cases the source loses the row (rows below renumber up by one) and the target gains it at `toIndex` (rows at or below renumber down by one).
-- The row's modules keep `col`, `rotation` and `locked`; they get the new `caseId` and row number. The row's 3U/1U type moves with it. Widths are equal and each row keeps its type, so nothing leaves the case and every rotation stays valid.
-- `rowTypes` is normalised as in `updateCase`: padded to `rows`, and absent when every row is 3U.
-- The reducer returns the same state object when a move is refused or changes nothing. The UI uses that to colour the insertion line.
+- `reorderRow { caseId, fromRow, toIndex }`: `toIndex` is the insertion point (1 to rows+1) counted before the row is removed. `toIndex` equal to `fromRow` or `fromRow + 1` is a no-op. The row's type moves with it, and `rowTypes` stays normalised.
+- `swapRows { aCaseId, aRow, bCaseId, bRow }`: trades the modules of two rows (also valid within one case). The cases array is untouched.
+- Both return the same state object when refused or when nothing changes, so the UI colours its indicator by comparing `reducer(state, action) !== state`.
 
 ## Refusals
 
-- Target `hp` differs from the source's.
-- Source and target are different cases and the source has one row (a case keeps at least one row).
-- Locks: the moved row holds a locked module, or any row whose number would change (in either case) holds one. Locked modules never change position.
-- A row or insertion index out of range.
+- `swapRows`: different `hp`; different row types; a row out of range; the same row; either row holds a locked module; both rows empty (nothing to do).
+- `reorderRow`: a row or index out of range; the moved row or any row whose number would change holds a locked module (locked modules never change position).
 
 ## Geometry
 
-- `rowInsertIndex(c, wy)`: insertion point for a world-space y over case `c`.
-- `insertionLineY(c, index)`: y of the indicator relative to the case origin, centred in the gap between rows (or just above the first row / below the last).
+- `rowAtY(c, wy)`: the row under a world-space y (the gap below a row belongs to it; clamps at the ends). `pointToSlot` uses it.
+- `rowInsertIndex(c, wy)` and `insertionLineY(c, index)` for the within-case insertion line.
 
 ## Not included
 
-Other cases are not pushed out of the way when a case grows taller (same as editing rows today). Dragging a row to the tray or onto empty canvas does nothing.
+Dragging a row to the tray or empty canvas does nothing. Swapping rows of different types is not supported.
 
 ## Tests
 
-Store: reorder down and up, no-op indices, cross-case move (renumbering on both sides, row type and rotation travel), unequal width, source with one row, and each lock refusal. Geometry: `rowInsertIndex` and `insertionLineY` on a mixed 3U/1U case. The drag itself is checked in headless Chrome.
+Store: reorder down and up, no-op indices, row count unchanged, locks; swap between populated rows, into an empty row (blank left behind, cases unchanged), rotation kept, 1U with 1U, refusals (type, width, range, same row), both-empty no-op, locks. Geometry: `rowAtY`, `rowInsertIndex`, `insertionLineY`. The drag is checked in headless Chrome.

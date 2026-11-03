@@ -13,7 +13,8 @@ export type Action =
   | { type: 'duplicateModule'; id: string }
   | { type: 'setLocked'; id: string; locked: boolean }
   | { type: 'rotateModule'; id: string }
-  | { type: 'moveRow'; fromCaseId: string; fromRow: number; toCaseId: string; toIndex: number }
+  | { type: 'reorderRow'; caseId: string; fromRow: number; toIndex: number }
+  | { type: 'swapRows'; aCaseId: string; aRow: number; bCaseId: string; bRow: number }
   | { type: 'removeModule'; id: string }
   | { type: 'replace'; state: AppState };
 
@@ -54,63 +55,67 @@ function evictOutOfBounds(modules: ModuleItem[], c: CaseItem): ModuleItem[] {
 
 const isLocked = (state: AppState, id: string) => state.modules.some((m) => m.id === id && m.locked);
 
-/**
- * Moves a row, with its modules and 3U/1U type, within a case or into another case of the same width.
- * Returns the same state when the move is refused or changes nothing: see the row-drag spec.
- */
-function moveRow(state: AppState, a: { fromCaseId: string; fromRow: number; toCaseId: string; toIndex: number }) {
-  const from = state.cases.find((c) => c.id === a.fromCaseId);
-  const to = state.cases.find((c) => c.id === a.toCaseId);
-  if (!from || !to || from.hp !== to.hp) return state;
-  if (a.fromRow < 1 || a.fromRow > from.rows || a.toIndex < 1 || a.toIndex > to.rows + 1) return state;
-  const same = from.id === to.id;
-  if (!same && from.rows === 1) return state;
+/** Reorders the rows of one case; the row count never changes. Same state when refused or nothing moves. */
+function reorderRow(state: AppState, a: { caseId: string; fromRow: number; toIndex: number }) {
+  const c = state.cases.find((x) => x.id === a.caseId);
+  if (!c || a.fromRow < 1 || a.fromRow > c.rows || a.toIndex < 1 || a.toIndex > c.rows + 1) return state;
 
-  // Where the row lands: in one case, moving down shifts the insertion point up by the removed row.
-  const target = same && a.toIndex > a.fromRow ? a.toIndex - 1 : a.toIndex;
-  if (same && target === a.fromRow) return state;
+  // Moving down shifts the insertion point up by the removed row.
+  const target = a.toIndex > a.fromRow ? a.toIndex - 1 : a.toIndex;
+  if (target === a.fromRow) return state;
 
-  /** Where a placed module goes, or its own placement when its row doesn't move. */
-  const renumber = (p: Placement): Placement => {
-    if (p.caseId === from.id && p.row === a.fromRow) return { ...p, caseId: to.id, row: target };
-    if (same) {
-      if (p.caseId !== from.id) return p;
-      if (a.fromRow < target && p.row > a.fromRow && p.row <= target) return { ...p, row: p.row - 1 };
-      if (target < a.fromRow && p.row >= target && p.row < a.fromRow) return { ...p, row: p.row + 1 };
-      return p;
-    }
-    if (p.caseId === from.id && p.row > a.fromRow) return { ...p, row: p.row - 1 };
-    if (p.caseId === to.id && p.row >= target) return { ...p, row: p.row + 1 };
-    return p;
+  const renumber = (row: number) => {
+    if (row === a.fromRow) return target;
+    if (a.fromRow < target && row > a.fromRow && row <= target) return row - 1;
+    if (target < a.fromRow && row >= target && row < a.fromRow) return row + 1;
+    return row;
   };
 
   let blocked = false;
   const modules = state.modules.map((m) => {
-    if (!m.placement) return m;
-    const placement = renumber(m.placement);
-    if (placement === m.placement) return m;
+    const p = m.placement;
+    if (!p || p.caseId !== c.id) return m;
+    const row = renumber(p.row);
+    if (row === p.row) return m;
     if (m.locked) blocked = true;
-    return { ...m, placement };
+    return { ...m, placement: { ...p, row } };
   });
   if (blocked) return state;
 
-  const types = (c: CaseItem) => Array.from({ length: c.rows }, (_, i) => rowTypeOf(c, i + 1));
-  const moved = types(from)[a.fromRow - 1];
-  const without = types(from).filter((_, i) => i !== a.fromRow - 1);
-  const withMoved = (list: RowType[]) => [...list.slice(0, target - 1), moved, ...list.slice(target - 1)];
-  const update = (c: CaseItem, rowTypes: RowType[]): CaseItem => ({
-    ...c,
-    rows: rowTypes.length,
-    rowTypes: normalizeRowTypes(rowTypes, rowTypes.length),
-  });
-
-  const cases = state.cases.map((c) => {
-    if (same && c.id === from.id) return update(c, withMoved(without));
-    if (c.id === from.id) return update(c, without);
-    if (c.id === to.id) return update(c, withMoved(types(c)));
-    return c;
-  });
+  const types = Array.from({ length: c.rows }, (_, i) => rowTypeOf(c, i + 1));
+  const [moved] = types.splice(a.fromRow - 1, 1);
+  types.splice(target - 1, 0, moved);
+  const cases = state.cases.map((x) => (x.id === c.id ? { ...c, rowTypes: normalizeRowTypes(types, c.rows) } : x));
   return { cases, modules };
+}
+
+/**
+ * Trades the modules of two rows, in one case or in two cases of the same width. Rows are fixed slots, so no case
+ * changes size: swapping with an empty row moves the modules and leaves a blank row behind. The rows must be the
+ * same type (a 1U row can't become 3U). Same state when refused, when a row holds a locked module, or both are empty.
+ */
+function swapRows(state: AppState, a: { aCaseId: string; aRow: number; bCaseId: string; bRow: number }) {
+  const ca = state.cases.find((c) => c.id === a.aCaseId);
+  const cb = state.cases.find((c) => c.id === a.bCaseId);
+  if (!ca || !cb || ca.hp !== cb.hp) return state;
+  if (a.aRow < 1 || a.aRow > ca.rows || a.bRow < 1 || a.bRow > cb.rows) return state;
+  if (ca.id === cb.id && a.aRow === a.bRow) return state;
+  if (rowTypeOf(ca, a.aRow) !== rowTypeOf(cb, a.bRow)) return state;
+
+  let moved = false;
+  let blocked = false;
+  const modules = state.modules.map((m) => {
+    const p = m.placement;
+    if (!p) return m;
+    let placement: Placement | null = null;
+    if (p.caseId === ca.id && p.row === a.aRow) placement = { ...p, caseId: cb.id, row: a.bRow };
+    else if (p.caseId === cb.id && p.row === a.bRow) placement = { ...p, caseId: ca.id, row: a.aRow };
+    if (!placement) return m;
+    moved = true;
+    if (m.locked) blocked = true;
+    return { ...m, placement };
+  });
+  return moved && !blocked ? { ...state, modules } : state;
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -222,8 +227,10 @@ export function reducer(state: AppState, action: Action): AppState {
         modules: state.modules.map((x) => (x.id === m.id ? { ...x, placement: { ...p, rotation } } : x)),
       };
     }
-    case 'moveRow':
-      return moveRow(state, action);
+    case 'reorderRow':
+      return reorderRow(state, action);
+    case 'swapRows':
+      return swapRows(state, action);
     case 'removeModule':
       if (isLocked(state, action.id)) return state;
       return { ...state, modules: state.modules.filter((m) => m.id !== action.id) };

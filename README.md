@@ -20,10 +20,10 @@ npm test         # parser, placement and store tests
   a minute and later ones are instant.
 - **Cases:** add one from a preset or with custom rows and HP. Drag the header to move it. Double-click the
   header (or click **Edit**) to rename or resize. If you shrink a case, modules that no longer fit go to the tray. **Edit** also sets each row to 3U or 1U; changing a row's type sends modules that don't suit it to the tray.
-- **Rows:** drag the grip strip at the left edge of a row to reorder rows in its case, or drop it into another case of the
-  same width. The row's modules and its 3U/1U type go with it. A green line shows where it will land; red means the
-  drop isn't allowed (a row holding a locked module can't move, and nothing may renumber a locked row). A case always
-  keeps at least one row. `Esc` cancels.
+- **Rows:** a case's row count is fixed. Drag the grip strip at the left edge of a row to reorder rows within its case
+  (a green line shows where it lands). Drop it onto a row of another case of the same width to swap the two rows' modules;
+  dropping onto an empty row moves the modules and leaves a blank row behind. Both rows must be the same type (3U or 1U),
+  and a row holding a locked module can't move. Red means the drop isn't allowed. `Esc` cancels.
 - **Modules:** drag between cases and the tray. Modules snap to the 1HP grid. If you drop on an occupied
   spot, the module shifts to the nearest free gap within 12HP. A red outline means it won't fit. 1U modules go in 1U rows. A 1–4HP 3U module snaps sideways into a 1U row (it then spans 26HP, one module per span), and 3U modules can be flipped 180° in 3U rows.
 - **Locks:** select a placed module and press `L` (or **Lock** in the sidebar) to pin it. A locked module can't

@@ -24,6 +24,8 @@ interface Props {
   draggingRow: number | null;
   /** Where a dragged row would be inserted in this case, and whether that drop is allowed. */
   rowInsert: { index: number; valid: boolean } | null;
+  /** The row of this case a row from another case would swap with, and whether that is allowed. */
+  rowSwap: { row: number; valid: boolean } | null;
   selectedId: string | null;
   onModulePointerDown: (e: React.PointerEvent<HTMLDivElement>, m: ModuleItem) => void;
   onRowGripPointerDown: (e: React.PointerEvent<HTMLDivElement>, caseId: string, row: number) => void;
@@ -84,6 +86,7 @@ export function CaseView({
   draggingId,
   draggingRow,
   rowInsert,
+  rowSwap,
   selectedId,
   onModulePointerDown,
   onRowGripPointerDown,
@@ -238,6 +241,20 @@ export function CaseView({
             />
           )}
         </div>
+      )}
+
+      {rowSwap && (
+        <div
+          className={`pointer-events-none absolute z-30 outline-2 ${
+            rowSwap.valid ? 'bg-emerald-400/10 outline-emerald-400' : 'bg-red-500/20 outline-red-500'
+          }`}
+          style={{
+            left: CASE_PAD,
+            top: rowTop(c, rowSwap.row),
+            width: c.hp * HP_PX,
+            height: rowHeight(rowTypeOf(c, rowSwap.row)),
+          }}
+        />
       )}
 
       {rowInsert && (

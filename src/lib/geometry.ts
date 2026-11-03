@@ -51,6 +51,17 @@ export function insertionLineY(c: RowLayout, index: number) {
   return rowTop(c, c.rows) + rowHeight(rowTypeOf(c, c.rows)) + ROW_GAP / 2;
 }
 
+/** The row under world-space `wy`: the gap below a row belongs to that row, and anything past the last row clamps to it. */
+export function rowAtY(c: RowLayout & Pick<CaseItem, 'y'>, wy: number) {
+  const localY = wy - c.y - HEADER_PX - CASE_PAD;
+  let bottom = 0;
+  for (let r = 1; r <= c.rows; r++) {
+    bottom += rowHeight(rowTypeOf(c, r)) + ROW_GAP;
+    if (localY < bottom) return r;
+  }
+  return c.rows;
+}
+
 /** Left edge of an HP column, relative to the row. */
 export function colLeft(col: number) {
   return (col - 1) * HP_PX;
@@ -76,19 +87,7 @@ export function pointToSlot(
   const { w, h } = caseSize(c);
   if (wx < c.x || wx > c.x + w || wy < c.y || wy > c.y + h) return null;
 
-  // The gap below a row belongs to that row; anything past the last row clamps to it.
-  const localY = wy - c.y - HEADER_PX - CASE_PAD;
-  let row = c.rows;
-  let top = 0;
-  for (let r = 1; r <= c.rows; r++) {
-    const bottom = top + rowHeight(rowTypeOf(c, r)) + ROW_GAP;
-    if (localY < bottom) {
-      row = r;
-      break;
-    }
-    top = bottom;
-  }
-
+  const row = rowAtY(c, wy);
   const snapped = snapRotation(module, rowTypeOf(c, row), rotation) ?? rotation;
   const cols = footprintCols(module, snapped);
   const left = wx - grabFx * cols * HP_PX - c.x - CASE_PAD;
