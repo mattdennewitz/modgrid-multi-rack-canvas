@@ -10,6 +10,13 @@ import { ModulePanel } from './ModulePanel';
 
 const TRAY_SCALE = 0.5;
 
+type TraySize = 'all' | '1u' | '3u';
+const TRAY_SIZES: { value: TraySize; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: '1u', label: '1U' },
+  { value: '3u', label: '3U' },
+];
+
 const CASE_PRESETS = [
   { rows: 1, hp: 84 },
   { rows: 1, hp: 104 },
@@ -347,13 +354,15 @@ interface Props {
 
 export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, selectedId, onModulePointerDown }: Props) {
   const [filter, setFilter] = useState('');
+  const [size, setSize] = useState<TraySize>('all');
   const tray = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return state.modules
       .filter((m) => !m.placement)
+      .filter((m) => size === 'all' || m.is1u === (size === '1u'))
       .filter((m) => !q || `${m.name} ${m.vendor} ${m.description}`.toLowerCase().includes(q))
       .sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
-  }, [state.modules, filter]);
+  }, [state.modules, filter, size]);
   const trayTotal = state.modules.filter((m) => !m.placement).length;
 
   const selected = state.modules.find((m) => m.id === selectedId) ?? null;
@@ -392,12 +401,31 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
             Tray <span className="font-normal text-neutral-500">({trayTotal} unplaced)</span>
           </h2>
           {trayTotal > 0 && (
-            <input
-              className={`${inputClass} mb-3`}
-              placeholder="Filter by name or maker"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-            />
+            <>
+              <input
+                className={`${inputClass} mb-2`}
+                placeholder="Filter by name or maker"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+              <div className="mb-3 flex gap-1" role="group" aria-label="Filter by module height">
+                {TRAY_SIZES.map((s) => (
+                  <button
+                    key={s.value}
+                    type="button"
+                    aria-pressed={size === s.value}
+                    onClick={() => setSize(s.value)}
+                    className={`flex-1 rounded px-2 py-0.5 text-xs ${
+                      size === s.value
+                        ? 'bg-sky-600 text-white'
+                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
         <div className="flex-1 overflow-y-auto px-4 pb-4">

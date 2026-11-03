@@ -3,9 +3,10 @@ import type { ModuleItem, Power } from './types';
 const BASE = 'https://modulargrid.net';
 
 /** ModularGrid's rack-sized panel render: 10px/HP x 255px at 1x. */
-export function panelImageUrl(m: Pick<ModuleItem, 'moduleId' | 'versionId'>) {
+export function panelImageUrl(m: Pick<ModuleItem, 'moduleId' | 'versionId' | 'is1u'>) {
   const id = m.versionId ? `${m.moduleId}_v${m.versionId}` : m.moduleId;
-  return `${BASE}/img/modcache/${id}.r@2x.png`;
+  // The .r render is a full 3U-height panel; 1U tiles have their own .1u render.
+  return `${BASE}/img/modcache/${id}.${m.is1u ? '1u' : 'r'}@2x.png`;
 }
 
 export function modulePageUrl(m: Pick<ModuleItem, 'slug'>) {
