@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { parseEnv } from 'node:util';
 import { defineConfig, loadEnv } from 'vite';
@@ -14,6 +15,7 @@ export default defineConfig(({ mode }) => {
   const fileEnv = existsSync('.env') ? parseEnv(readFileSync('.env', 'utf8')) : {};
   const env: Record<string, string | undefined> = { ...loadEnv(mode, process.cwd(), ''), ...fileEnv };
   return {
+    resolve: { alias: { '@': path.resolve(__dirname, './src') } },
     plugins: [
       react(),
       tailwindcss(),

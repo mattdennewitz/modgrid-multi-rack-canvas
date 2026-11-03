@@ -7,6 +7,8 @@ import { nextRotation } from '../lib/rotation';
 import { isAppState, type Action } from '../lib/store';
 import type { AppState, CollectionEntry, CollectionModule, ImportedRack, ModuleItem, RowType } from '../lib/types';
 import { ModulePanel } from './ModulePanel';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const TRAY_SCALE = 0.5;
 
@@ -26,15 +28,9 @@ const CASE_PRESETS = [
   { rows: 3, hp: 126 },
 ];
 
-const inputClass =
-  'w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none';
-const buttonClass =
-  'rounded bg-neutral-700 px-3 py-1 text-sm text-neutral-100 hover:bg-neutral-600 disabled:opacity-50';
-const primaryClass = 'rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-500 disabled:opacity-50';
-
 function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="border-b border-neutral-800 p-4">
+    <section className="border-b p-4">
       <h2 className="mb-2 text-xs font-semibold tracking-wider text-neutral-400 uppercase">{title}</h2>
       {children}
     </section>
@@ -120,8 +116,7 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
 
   return (
     <form onSubmit={submit} className="space-y-2">
-      <input
-        className={inputClass}
+      <Input
         placeholder="Rack or profile URL on modulargrid.net"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
@@ -131,9 +126,9 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
           <input type="checkbox" checked={createCase} onChange={(e) => setCreateCase(e.target.checked)} />
           Create a case with this layout <span className="text-neutral-500">(racks only)</span>
         </label>
-        <button className={primaryClass} disabled={busy || !url.trim()}>
+        <Button size="sm" disabled={busy || !url.trim()}>
           {busy ? 'Importing…' : 'Import'}
-        </button>
+        </Button>
       </div>
       {message && (
         <p className={`text-xs ${message.kind === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{message.text}</p>
@@ -157,46 +152,43 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
     <form onSubmit={submit} className="space-y-2">
       <div className="flex flex-wrap gap-1">
         {CASE_PRESETS.map((p) => (
-          <button
+          <Button
             key={`${p.rows}x${p.hp}`}
             type="button"
-            className={`rounded px-2 py-0.5 text-xs ${
-              p.rows === rows && p.hp === hp ? 'bg-sky-700 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-            }`}
+            size="xs"
+            variant={p.rows === rows && p.hp === hp ? 'default' : 'secondary'}
             onClick={() => {
               setRows(p.rows);
               setHp(p.hp);
             }}
           >
             {p.rows}×{p.hp}
-          </button>
+          </Button>
         ))}
       </div>
-      <input className={inputClass} placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+      <Input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
       <div className="flex items-end gap-2">
         <label className="flex-1 text-xs text-neutral-400">
           Rows (3U)
-          <input
+          <Input
             type="number"
             min={1}
             max={12}
-            className={inputClass}
             value={rows}
             onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
           />
         </label>
         <label className="flex-1 text-xs text-neutral-400">
           Width (HP)
-          <input
+          <Input
             type="number"
             min={4}
             max={300}
-            className={inputClass}
             value={hp}
             onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
           />
         </label>
-        <button className={primaryClass}>Add</button>
+        <Button size="sm">Add</Button>
       </div>
     </form>
   );
@@ -245,43 +237,43 @@ function SelectedModule({
       {module.locked && <p className="text-xs text-amber-400">Locked in place. Unlock to move or remove it.</p>}
       <div className="flex flex-wrap gap-2">
         {module.placement && (
-          <button
-            className={module.locked ? 'rounded bg-amber-600 px-3 py-1 text-sm text-neutral-950 hover:bg-amber-500' : buttonClass}
+          <Button
+            size="sm"
+            variant={module.locked ? 'default' : 'secondary'}
             onClick={() => dispatch({ type: 'setLocked', id: module.id, locked: !module.locked })}
             title="Toggle lock (L)"
           >
             {module.locked ? 'Unlock' : 'Lock'}
-          </button>
+          </Button>
         )}
         {module.placement && rowType && (
-          <button
-            className={buttonClass}
+          <Button size="sm" variant="secondary"
             disabled={module.locked || nextRotation(module, rowType, rotation) === rotation}
             onClick={() => dispatch({ type: 'rotateModule', id: module.id })}
             title="Rotate (R)"
           >
             Rotate
-          </button>
+          </Button>
         )}
         {module.placement && (
-          <button
-            className={buttonClass}
+          <Button size="sm" variant="secondary"
             disabled={module.locked}
             onClick={() => dispatch({ type: 'placeModule', id: module.id, placement: null })}
           >
             Send to tray
-          </button>
+          </Button>
         )}
-        <button className={buttonClass} onClick={() => dispatch({ type: 'duplicateModule', id: module.id })}>
+        <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'duplicateModule', id: module.id })}>
           Duplicate
-        </button>
-        <button
-          className="rounded bg-red-800 px-3 py-1 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
           disabled={module.locked}
           onClick={() => dispatch({ type: 'removeModule', id: module.id })}
         >
           Remove
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -311,14 +303,13 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
 
   return (
     <div className="flex flex-wrap gap-2">
-      <button className={buttonClass} onClick={exportJson}>
+      <Button size="sm" variant="secondary" onClick={exportJson}>
         Export
-      </button>
-      <button className={buttonClass} onClick={() => fileRef.current?.click()}>
+      </Button>
+      <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
         Load…
-      </button>
-      <button
-        className={buttonClass}
+      </Button>
+      <Button size="sm" variant="secondary"
         onClick={() => {
           if (confirm('Clear all cases and modules? (You can undo.)')) {
             dispatch({ type: 'replace', state: { cases: [], modules: [] } });
@@ -326,7 +317,7 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
         }}
       >
         Clear
-      </button>
+      </Button>
       <input
         ref={fileRef}
         type="file"
@@ -402,27 +393,25 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
           </h2>
           {trayTotal > 0 && (
             <>
-              <input
-                className={`${inputClass} mb-2`}
+              <Input
+                className="mb-2"
                 placeholder="Filter by name or maker"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
               <div className="mb-3 flex gap-1" role="group" aria-label="Filter by module height">
                 {TRAY_SIZES.map((s) => (
-                  <button
+                  <Button
                     key={s.value}
                     type="button"
+                    size="xs"
+                    variant={size === s.value ? 'default' : 'secondary'}
                     aria-pressed={size === s.value}
                     onClick={() => setSize(s.value)}
-                    className={`flex-1 rounded px-2 py-0.5 text-xs ${
-                      size === s.value
-                        ? 'bg-sky-600 text-white'
-                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                    }`}
+                    className="flex-1"
                   >
                     {s.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
             </>

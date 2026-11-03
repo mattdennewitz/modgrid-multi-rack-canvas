@@ -5,6 +5,7 @@ import { rowGaps } from '../lib/placement';
 import { footprintCols } from '../lib/rotation';
 import type { CaseItem, ModuleItem, Rotation } from '../lib/types';
 import { ModulePanel } from './ModulePanel';
+import { Button } from '@/components/ui/button';
 
 export interface DropPreview {
   module: ModuleItem;
@@ -148,18 +149,12 @@ export function CaseView({
           +12V {power.plus12}mA · −12V {power.minus12}mA · 5V {power.plus5}mA
         </span>
         <span className="ml-auto flex shrink-0 gap-1">
-          <button
-            className="rounded px-2 py-0.5 text-xs text-neutral-300 hover:bg-neutral-600"
-            onClick={() => onEdit(c.id)}
-          >
+          <Button size="xs" variant="ghost" onClick={() => onEdit(c.id)}>
             Edit
-          </button>
-          <button
-            className="rounded px-2 py-0.5 text-xs text-neutral-300 hover:bg-red-700"
-            onClick={() => onDelete(c.id)}
-          >
+          </Button>
+          <Button size="xs" variant="ghost" className="hover:bg-destructive/30" onClick={() => onDelete(c.id)}>
             Delete
-          </button>
+          </Button>
         </span>
       </div>
 

@@ -9,6 +9,10 @@ import { nearestFreeCol } from './lib/placement';
 import { SIDEWAYS_COLS, allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
 import { historyReducer, isOutOfBounds, loadState, reducer, saveState, type Action } from './lib/store';
 import type { AppState, CaseItem, ModuleItem, Rotation, RowType } from './lib/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 type DropTarget =
   | { kind: 'case'; caseId: string; row: number; col: number; rotation: Rotation; valid: boolean }
@@ -454,34 +458,34 @@ function Toolbar(props: {
   chatOpen: boolean;
   onToggleChat: () => void;
 }) {
-  const btn = 'rounded px-2 py-1 text-sm text-neutral-200 hover:bg-neutral-700 disabled:opacity-40';
   return (
-    <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg bg-neutral-800/90 p-1 shadow-lg ring-1 ring-black/40 backdrop-blur">
-      <button className={btn} onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">
+    <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-lg backdrop-blur">
+      <Button variant="ghost" size="sm" onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">
         Undo
-      </button>
-      <button className={btn} onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">
+      </Button>
+      <Button variant="ghost" size="sm" onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">
         Redo
-      </button>
-      <span className="mx-1 h-5 w-px bg-neutral-600" />
-      <button className={btn} onClick={() => props.onZoom(1 / 1.2)} title="Zoom out">
+      </Button>
+      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Button variant="ghost" size="sm" onClick={() => props.onZoom(1 / 1.2)} title="Zoom out">
         −
-      </button>
-      <span className="w-12 text-center text-xs text-neutral-400 tabular-nums">{Math.round(props.zoom * 100)}%</span>
-      <button className={btn} onClick={() => props.onZoom(1.2)} title="Zoom in">
+      </Button>
+      <span className="w-12 text-center text-xs text-muted-foreground tabular-nums">{Math.round(props.zoom * 100)}%</span>
+      <Button variant="ghost" size="sm" onClick={() => props.onZoom(1.2)} title="Zoom in">
         +
-      </button>
-      <button className={btn} onClick={props.onFit} title="Fit all cases">
+      </Button>
+      <Button variant="ghost" size="sm" onClick={props.onFit} title="Fit all cases">
         Fit
-      </button>
-      <span className="mx-1 h-5 w-px bg-neutral-600" />
-      <button
-        className={`${btn} ${props.chatOpen ? 'bg-sky-700 hover:bg-sky-600' : ''}`}
+      </Button>
+      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Button
+        variant={props.chatOpen ? 'default' : 'ghost'}
+        size="sm"
         onClick={props.onToggleChat}
         title="Layout advisor chat"
       >
         Chat
-      </button>
+      </Button>
     </div>
   );
 }
@@ -505,87 +509,78 @@ function EditCaseDialog({
   const outOfBounds = modules.filter((m) => isOutOfBounds(m, { id: c.id, rows, hp, rowTypes: types }));
   const evicted = outOfBounds.length;
   const lockedEvicted = outOfBounds.filter((m) => m.locked).length;
-  const input =
-    'w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onPointerDown={onClose}>
-      <form
-        className="w-80 space-y-3 rounded-lg bg-neutral-800 p-5 shadow-2xl ring-1 ring-black/50"
-        onPointerDown={(e) => e.stopPropagation()}
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave({ name: name.trim() || c.name, rows, hp, rowTypes: types });
-        }}
-      >
-        <h2 className="text-sm font-semibold text-neutral-100">Edit case</h2>
-        <label className="block text-xs text-neutral-400">
-          Name
-          <input className={input} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-        </label>
-        <div className="flex gap-2">
-          <label className="flex-1 text-xs text-neutral-400">
-            Rows
-            <input
-              type="number"
-              min={1}
-              max={12}
-              className={input}
-              value={rows}
-              onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
-            />
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="w-80 sm:max-w-80">
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave({ name: name.trim() || c.name, rows, hp, rowTypes: types });
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Edit case</DialogTitle>
+          </DialogHeader>
+          <label className="block text-xs text-muted-foreground">
+            Name
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </label>
-          <label className="flex-1 text-xs text-neutral-400">
-            Width (HP)
-            <input
-              type="number"
-              min={4}
-              max={300}
-              className={input}
-              value={hp}
-              onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
-            />
-          </label>
-        </div>
-        <div className="text-xs text-neutral-400">
-          Row heights
-          <div className="mt-1 flex flex-wrap gap-1">
-            {types.map((t, i) => (
-              <button
-                key={i}
-                type="button"
-                title="Toggle 3U / 1U"
-                className={`rounded px-2 py-0.5 text-xs ${
-                  t === '1U' ? 'bg-sky-700 text-white' : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-700'
-                }`}
-                onClick={() => setRowTypes(types.map((x, j) => (j === i ? (x === '1U' ? '3U' : '1U') : x)))}
-              >
-                {i + 1}: {t}
-              </button>
-            ))}
+          <div className="flex gap-2">
+            <label className="flex-1 text-xs text-muted-foreground">
+              Rows
+              <Input
+                type="number"
+                min={1}
+                max={12}
+                value={rows}
+                onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
+            <label className="flex-1 text-xs text-muted-foreground">
+              Width (HP)
+              <Input
+                type="number"
+                min={4}
+                max={300}
+                value={hp}
+                onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
           </div>
-        </div>
-        {lockedEvicted > 0 ? (
-          <p className="text-xs text-red-400">
-            {lockedEvicted} locked module(s) wouldn't fit. Unlock them or pick a larger size.
-          </p>
-        ) : (
-          evicted > 0 && (
-            <p className="text-xs text-amber-400">{evicted} module(s) won't fit and will move to the tray.</p>
-          )
-        )}
-        <div className="flex justify-end gap-2">
-          <button type="button" className="rounded px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-700" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-500 disabled:opacity-50"
-            disabled={lockedEvicted > 0}
-          >
-            Save
-          </button>
-        </div>
-      </form>
-    </div>
+          <div className="text-xs text-muted-foreground">
+            Row heights
+            <div className="mt-1 flex flex-wrap gap-1">
+              {types.map((t, i) => (
+                <Button
+                  key={i}
+                  type="button"
+                  size="xs"
+                  variant={t === '1U' ? 'default' : 'secondary'}
+                  title="Toggle 3U / 1U"
+                  onClick={() => setRowTypes(types.map((x, j) => (j === i ? (x === '1U' ? '3U' : '1U') : x)))}
+                >
+                  {i + 1}: {t}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {lockedEvicted > 0 ? (
+            <p className="text-xs text-destructive">
+              {lockedEvicted} locked module(s) wouldn't fit. Unlock them or pick a larger size.
+            </p>
+          ) : (
+            evicted > 0 && <p className="text-xs text-amber-400">{evicted} module(s) won't fit and will move to the tray.</p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button disabled={lockedEvicted > 0}>Save</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

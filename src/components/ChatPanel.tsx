@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm';
 import { loadChat, saveChat, streamChat, type ChatMessage } from '../lib/chat';
 import { summarizeLayout } from '../lib/layoutSummary';
 import type { AppState } from '../lib/types';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 
 const STARTERS = [
   'What would you change about this layout for patching ergonomics?',
@@ -97,22 +99,23 @@ export function ChatPanel({ state, selectedId, onClose }: Props) {
   };
 
   return (
-    <aside className="flex h-full w-96 shrink-0 flex-col border-l border-neutral-800 bg-neutral-900/60">
-      <header className="flex items-center gap-2 border-b border-neutral-800 px-4 py-3">
+    <aside className="flex h-full w-96 shrink-0 flex-col border-l bg-card/60">
+      <header className="flex items-center gap-2 border-b px-4 py-3">
         <div className="flex-1">
           <h2 className="text-sm font-semibold text-neutral-100">Layout advisor</h2>
           <p className="text-xs text-neutral-500">Sees your current layout and locks. Advice only.</p>
         </div>
-        <button
-          className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800 disabled:opacity-40"
+        <Button
+          size="xs"
+          variant="ghost"
           disabled={streaming || messages.length === 0}
           onClick={() => confirm('Clear the chat history?') && setMessages([])}
         >
           Clear
-        </button>
-        <button className="rounded px-2 py-1 text-xs text-neutral-400 hover:bg-neutral-800" onClick={onClose}>
+        </Button>
+        <Button size="xs" variant="ghost" onClick={onClose}>
           Close
-        </button>
+        </Button>
       </header>
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4 text-sm">
@@ -123,13 +126,14 @@ export function ChatPanel({ state, selectedId, onClose }: Props) {
               7U sits behind it".
             </p>
             {STARTERS.map((s) => (
-              <button
+              <Button
                 key={s}
-                className="block w-full rounded border border-neutral-800 px-3 py-2 text-left text-xs text-neutral-300 hover:border-neutral-600 hover:bg-neutral-800"
+                variant="outline"
+                className="h-auto w-full justify-start px-3 py-2 text-left text-xs font-normal whitespace-normal"
                 onClick={() => send(s)}
               >
                 {s}
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -156,14 +160,14 @@ export function ChatPanel({ state, selectedId, onClose }: Props) {
       </div>
 
       <form
-        className="border-t border-neutral-800 p-3"
+        className="border-t p-3"
         onSubmit={(e) => {
           e.preventDefault();
           send(input);
         }}
       >
-        <textarea
-          className="h-20 w-full resize-none rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none"
+        <Textarea
+          className="h-20 resize-none"
           placeholder="Ask about your layout… (Enter to send, Shift+Enter for a new line)"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -176,20 +180,13 @@ export function ChatPanel({ state, selectedId, onClose }: Props) {
         />
         <div className="mt-2 flex justify-end">
           {streaming ? (
-            <button
-              type="button"
-              className="rounded bg-neutral-700 px-3 py-1 text-sm text-neutral-100 hover:bg-neutral-600"
-              onClick={() => abortRef.current?.abort()}
-            >
+            <Button type="button" size="sm" variant="secondary" onClick={() => abortRef.current?.abort()}>
               Stop
-            </button>
+            </Button>
           ) : (
-            <button
-              className="rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-500 disabled:opacity-50"
-              disabled={!input.trim()}
-            >
+            <Button size="sm" disabled={!input.trim()}>
               Send
-            </button>
+            </Button>
           )}
         </div>
       </form>
