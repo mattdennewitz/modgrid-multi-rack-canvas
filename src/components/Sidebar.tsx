@@ -7,6 +7,18 @@ import { nextRotation } from '../lib/rotation';
 import { isAppState, type Action } from '../lib/store';
 import type { AppState, CollectionEntry, CollectionModule, ImportedRack, ModuleItem, RowType } from '../lib/types';
 import { ModulePanel } from './ModulePanel';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ConfirmDialog } from './ConfirmDialog';
+import { ChevronDown, Download, Link2, Plus, Trash2, Upload, Lock, LockOpen, RotateCw, Copy, Inbox, LayoutGrid, Boxes, Package, type LucideIcon } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const TRAY_SCALE = 0.5;
 
@@ -15,6 +27,15 @@ const TRAY_SIZES: { value: TraySize; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: '1u', label: '1U' },
   { value: '3u', label: '3U' },
+];
+
+type TrayWidth = 'any' | 'narrow' | 'medium' | 'wide' | 'xwide';
+const TRAY_WIDTHS: { value: TrayWidth; label: string; min: number; max: number }[] = [
+  { value: 'any', label: 'Any width', min: 0, max: Infinity },
+  { value: 'narrow', label: '1–6 HP', min: 1, max: 6 },
+  { value: 'medium', label: '7–12 HP', min: 7, max: 12 },
+  { value: 'wide', label: '13–20 HP', min: 13, max: 20 },
+  { value: 'xwide', label: '21+ HP', min: 21, max: Infinity },
 ];
 
 const CASE_PRESETS = [
@@ -26,18 +47,50 @@ const CASE_PRESETS = [
   { rows: 3, hp: 126 },
 ];
 
-const inputClass =
-  'w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 placeholder:text-neutral-500 focus:border-sky-500 focus:outline-none';
-const buttonClass =
-  'rounded bg-neutral-700 px-3 py-1 text-sm text-neutral-100 hover:bg-neutral-600 disabled:opacity-50';
-const primaryClass = 'rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-500 disabled:opacity-50';
-
-function Section({ title, children }: { title: React.ReactNode; children: React.ReactNode }) {
+function SectionHeading({
+  open,
+  icon: Icon,
+  children,
+  aside,
+}: {
+  open: boolean;
+  icon: LucideIcon;
+  children: React.ReactNode;
+  aside?: React.ReactNode;
+}) {
   return (
-    <section className="border-b border-neutral-800 p-4">
-      <h2 className="mb-2 text-xs font-semibold tracking-wider text-neutral-400 uppercase">{title}</h2>
-      {children}
-    </section>
+    <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md text-left text-[13px] font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50">
+      <Icon className="size-4 shrink-0 text-muted-foreground group-hover:text-foreground" />
+      <h2 className="flex-1">{children}</h2>
+      {aside}
+      <ChevronDown
+        className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? '' : '-rotate-90'}`}
+      />
+    </CollapsibleTrigger>
+  );
+}
+
+function Section({
+  title,
+  icon,
+  defaultOpen = true,
+  children,
+}: {
+  title: React.ReactNode;
+  icon: LucideIcon;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <section className="border-b border-border/60 px-4 py-3.5">
+        <SectionHeading open={open} icon={icon}>
+          {title}
+        </SectionHeading>
+        <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }
 
@@ -120,23 +173,29 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
 
   return (
     <form onSubmit={submit} className="space-y-2">
-      <input
-        className={inputClass}
-        placeholder="Rack or profile URL on modulargrid.net"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-      />
-      <div className="flex items-center justify-between gap-2">
-        <label className="flex items-center gap-2 text-xs text-neutral-300">
-          <input type="checkbox" checked={createCase} onChange={(e) => setCreateCase(e.target.checked)} />
-          Create a case with this layout <span className="text-neutral-500">(racks only)</span>
-        </label>
-        <button className={primaryClass} disabled={busy || !url.trim()}>
+      <div className="relative">
+        <Link2 className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-8"
+          placeholder="modulargrid.net rack or profile URL"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+      </div>
+      <div className="space-y-2">
+        <Label className="text-xs font-normal">
+          <Checkbox checked={createCase} onCheckedChange={(v) => setCreateCase(v === true)} />
+          Create a case with this layout <span className="text-muted-foreground">(racks only)</span>
+        </Label>
+        <Button className="w-full" disabled={busy || !url.trim()}>
+          <Download />
           {busy ? 'Importing…' : 'Import'}
-        </button>
+        </Button>
       </div>
       {message && (
-        <p className={`text-xs ${message.kind === 'error' ? 'text-red-400' : 'text-emerald-400'}`}>{message.text}</p>
+        <Alert variant={message.kind === 'error' ? 'destructive' : 'default'} className="px-3 py-2 text-xs">
+          <AlertDescription>{message.text}</AlertDescription>
+        </Alert>
       )}
     </form>
   );
@@ -155,48 +214,52 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
 
   return (
     <form onSubmit={submit} className="space-y-2">
-      <div className="flex flex-wrap gap-1">
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        spacing={1.5}
+        className="grid w-full grid-cols-3"
+        value={CASE_PRESETS.some((p) => p.rows === rows && p.hp === hp) ? `${rows}x${hp}` : ''}
+        onValueChange={(v) => {
+          const p = CASE_PRESETS.find((x) => `${x.rows}x${x.hp}` === v);
+          if (p) {
+            setRows(p.rows);
+            setHp(p.hp);
+          }
+        }}
+      >
         {CASE_PRESETS.map((p) => (
-          <button
-            key={`${p.rows}x${p.hp}`}
-            type="button"
-            className={`rounded px-2 py-0.5 text-xs ${
-              p.rows === rows && p.hp === hp ? 'bg-sky-700 text-white' : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-            }`}
-            onClick={() => {
-              setRows(p.rows);
-              setHp(p.hp);
-            }}
-          >
+          <ToggleGroupItem key={`${p.rows}x${p.hp}`} value={`${p.rows}x${p.hp}`} className="text-xs tabular-nums data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
             {p.rows}×{p.hp}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
-      <input className={inputClass} placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+      </ToggleGroup>
+      <Input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
       <div className="flex items-end gap-2">
-        <label className="flex-1 text-xs text-neutral-400">
+        <Label className="flex-1 flex-col items-stretch gap-1.5 text-xs font-normal text-muted-foreground">
           Rows (3U)
-          <input
+          <Input
             type="number"
             min={1}
             max={12}
-            className={inputClass}
             value={rows}
             onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
           />
-        </label>
-        <label className="flex-1 text-xs text-neutral-400">
+        </Label>
+        <Label className="flex-1 flex-col items-stretch gap-1.5 text-xs font-normal text-muted-foreground">
           Width (HP)
-          <input
+          <Input
             type="number"
             min={4}
             max={300}
-            className={inputClass}
             value={hp}
             onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
           />
-        </label>
-        <button className={primaryClass}>Add</button>
+        </Label>
+        <Button size="icon" aria-label="Add case" title="Add case">
+          <Plus />
+        </Button>
       </div>
     </form>
   );
@@ -215,25 +278,25 @@ function SelectedModule({
 }) {
   const rotation = module.placement?.rotation ?? 0;
   return (
-    <div className="space-y-2 text-sm">
-      <div>
+    <div className="space-y-2.5 text-sm">
+      <div className="rounded-lg border bg-background/60 p-3">
         <a
           href={modulePageUrl(module)}
           target="_blank"
           rel="noreferrer"
-          className="font-semibold text-neutral-100 hover:text-sky-400"
+          className="font-semibold text-foreground underline-offset-2 hover:text-sky-400 hover:underline"
         >
           {module.name}
         </a>
-        <div className="text-xs text-neutral-400">
+        <div className="text-xs text-muted-foreground">
           {module.vendor} · {module.hp}HP{module.is1u && ' · 1U'}
         </div>
-        {module.description && <div className="text-xs text-neutral-500">{module.description}</div>}
+        {module.description && <div className="text-xs text-muted-foreground">{module.description}</div>}
       </div>
-      <div className="text-xs text-neutral-400">
+      <div className="text-xs text-muted-foreground">
         +12V {module.power.plus12}mA · −12V {module.power.minus12}mA · 5V {module.power.plus5}mA
       </div>
-      <div className="text-xs text-neutral-500">
+      <div className="text-xs text-muted-foreground">
         {module.placement
           ? `In ${caseName ?? 'a case'}, row ${module.placement.row}, HP ${module.placement.col}${
               rotation ? ` · rotated ${rotation}°` : ''
@@ -245,43 +308,46 @@ function SelectedModule({
       {module.locked && <p className="text-xs text-amber-400">Locked in place. Unlock to move or remove it.</p>}
       <div className="flex flex-wrap gap-2">
         {module.placement && (
-          <button
-            className={module.locked ? 'rounded bg-amber-600 px-3 py-1 text-sm text-neutral-950 hover:bg-amber-500' : buttonClass}
+          <Button
+            size="sm"
+            variant={module.locked ? 'default' : 'secondary'}
             onClick={() => dispatch({ type: 'setLocked', id: module.id, locked: !module.locked })}
             title="Toggle lock (L)"
           >
+            {module.locked ? <LockOpen /> : <Lock />}
             {module.locked ? 'Unlock' : 'Lock'}
-          </button>
+          </Button>
         )}
         {module.placement && rowType && (
-          <button
-            className={buttonClass}
+          <Button size="sm" variant="secondary"
             disabled={module.locked || nextRotation(module, rowType, rotation) === rotation}
             onClick={() => dispatch({ type: 'rotateModule', id: module.id })}
             title="Rotate (R)"
           >
+            <RotateCw />
             Rotate
-          </button>
+          </Button>
         )}
         {module.placement && (
-          <button
-            className={buttonClass}
+          <Button size="sm" variant="secondary"
             disabled={module.locked}
             onClick={() => dispatch({ type: 'placeModule', id: module.id, placement: null })}
           >
             Send to tray
-          </button>
+          </Button>
         )}
-        <button className={buttonClass} onClick={() => dispatch({ type: 'duplicateModule', id: module.id })}>
+        <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'duplicateModule', id: module.id })}>
+          <Copy />
           Duplicate
-        </button>
-        <button
-          className="rounded bg-red-800 px-3 py-1 text-sm text-white hover:bg-red-700 disabled:opacity-50"
+        </Button>
+        <Button
+          size="sm"
+          variant="destructive"
           disabled={module.locked}
           onClick={() => dispatch({ type: 'removeModule', id: module.id })}
         >
           Remove
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -289,6 +355,7 @@ function SelectedModule({
 
 function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dispatch<Action> }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   const exportJson = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -305,28 +372,32 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
       if (!isAppState(parsed)) throw new Error('Not a rack canvas file');
       dispatch({ type: 'replace', state: parsed });
     } catch (err) {
-      alert(`Couldn't load file: ${err instanceof Error ? err.message : err}`);
+      toast.error(`Couldn't load file: ${err instanceof Error ? err.message : err}`);
     }
   };
 
   return (
     <div className="flex flex-wrap gap-2">
-      <button className={buttonClass} onClick={exportJson}>
+      <Button size="sm" variant="secondary" onClick={exportJson}>
+        <Download />
         Export
-      </button>
-      <button className={buttonClass} onClick={() => fileRef.current?.click()}>
+      </Button>
+      <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()}>
+        <Upload />
         Load…
-      </button>
-      <button
-        className={buttonClass}
-        onClick={() => {
-          if (confirm('Clear all cases and modules? (You can undo.)')) {
-            dispatch({ type: 'replace', state: { cases: [], modules: [] } });
-          }
-        }}
-      >
+      </Button>
+      <Button size="sm" variant="secondary" onClick={() => setConfirmClear(true)}>
+        <Trash2 />
         Clear
-      </button>
+      </Button>
+      <ConfirmDialog
+        open={confirmClear}
+        onOpenChange={setConfirmClear}
+        title="Clear everything?"
+        description="This removes all cases and modules. You can undo."
+        confirmLabel="Clear"
+        onConfirm={() => dispatch({ type: 'replace', state: { cases: [], modules: [] } })}
+      />
       <input
         ref={fileRef}
         type="file"
@@ -355,33 +426,47 @@ interface Props {
 export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, selectedId, onModulePointerDown }: Props) {
   const [filter, setFilter] = useState('');
   const [size, setSize] = useState<TraySize>('all');
+  const [width, setWidth] = useState<TrayWidth>('any');
   const tray = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return state.modules
       .filter((m) => !m.placement)
       .filter((m) => size === 'all' || m.is1u === (size === '1u'))
+      .filter((m) => {
+        const w = TRAY_WIDTHS.find((x) => x.value === width)!;
+        return m.hp >= w.min && m.hp <= w.max;
+      })
       .filter((m) => !q || `${m.name} ${m.vendor} ${m.description}`.toLowerCase().includes(q))
       .sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
-  }, [state.modules, filter, size]);
+  }, [state.modules, filter, size, width]);
   const trayTotal = state.modules.filter((m) => !m.placement).length;
 
+  const [trayOpen, setTrayOpen] = useState(true);
   const selected = state.modules.find((m) => m.id === selectedId) ?? null;
   const selectedCase = selected?.placement ? state.cases.find((c) => c.id === selected.placement!.caseId) : null;
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r border-neutral-800 bg-neutral-900/60">
-      <header className="border-b border-neutral-800 px-4 py-3">
-        <h1 className="text-base font-semibold text-neutral-100">Rack Canvas</h1>
-        <p className="text-xs text-neutral-500">All your cases, one view.</p>
+    <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-card">
+      <header className="flex items-center gap-3 border-b border-border/60 px-4 py-4">
+        <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-sm">
+          <LayoutGrid className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-sm leading-tight font-semibold tracking-tight text-foreground">Rack Canvas</h1>
+          <p className="text-xs text-muted-foreground">
+            {state.cases.length} {state.cases.length === 1 ? 'case' : 'cases'} · {state.modules.length}{' '}
+            {state.modules.length === 1 ? 'module' : 'modules'}
+          </p>
+        </div>
       </header>
-      <Section title="Import from ModularGrid">
+      <Section title="Import from ModularGrid" icon={Download}>
         <ImportRack state={state} dispatch={dispatch} />
       </Section>
-      <Section title="Add a case">
+      <Section title="Add a case" icon={Boxes}>
         <AddCase dispatch={dispatch} />
       </Section>
       {selected && (
-        <Section title="Selected module">
+        <Section title="Selected module" icon={Package}>
           <SelectedModule
             module={selected}
             caseName={selectedCase?.name ?? null}
@@ -392,45 +477,69 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
       )}
       <div
         ref={trayRef}
-        className={`flex min-h-40 flex-1 flex-col overflow-hidden border-b border-neutral-800 transition-colors ${
-          trayIsTarget ? 'bg-sky-950/60 ring-2 ring-sky-500 ring-inset' : ''
-        }`}
+        className={`flex flex-col overflow-hidden border-b border-border/60 transition-colors ${
+          trayOpen ? 'min-h-40 flex-1' : ''
+        } ${trayIsTarget ? 'bg-sky-500/10 ring-2 ring-sky-500/70 ring-inset' : ''}`}
       >
-        <div className="px-4 pt-4">
-          <h2 className="mb-2 text-xs font-semibold tracking-wider text-neutral-400 uppercase">
-            Tray <span className="font-normal text-neutral-500">({trayTotal} unplaced)</span>
-          </h2>
+        <Collapsible open={trayOpen} onOpenChange={setTrayOpen} className="flex min-h-0 flex-1 flex-col">
+        <div className="px-4 pt-3.5">
+          <div className="mb-3">
+            <SectionHeading
+              open={trayOpen}
+              icon={Inbox}
+              aside={
+                <Badge variant="secondary" className="tabular-nums">
+                  {trayTotal}
+                </Badge>
+              }
+            >
+              Tray
+            </SectionHeading>
+          </div>
+          <CollapsibleContent>
           {trayTotal > 0 && (
             <>
-              <input
-                className={`${inputClass} mb-2`}
+              <Input
+                className="mb-2"
                 placeholder="Filter by name or maker"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
               />
-              <div className="mb-3 flex gap-1" role="group" aria-label="Filter by module height">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={1.5}
+                className="mb-3 w-full"
+                aria-label="Filter by module height"
+                value={size}
+                onValueChange={(v) => v && setSize(v as typeof size)}
+              >
                 {TRAY_SIZES.map((s) => (
-                  <button
-                    key={s.value}
-                    type="button"
-                    aria-pressed={size === s.value}
-                    onClick={() => setSize(s.value)}
-                    className={`flex-1 rounded px-2 py-0.5 text-xs ${
-                      size === s.value
-                        ? 'bg-sky-600 text-white'
-                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                    }`}
-                  >
+                  <ToggleGroupItem key={s.value} value={s.value} className="flex-1 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                     {s.label}
-                  </button>
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
+              <Select value={width} onValueChange={(v) => setWidth(v as TrayWidth)}>
+                <SelectTrigger size="sm" className="mb-3 w-full" aria-label="Filter by module width">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRAY_WIDTHS.map((w) => (
+                    <SelectItem key={w.value} value={w.value}>
+                      {w.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </>
           )}
+          </CollapsibleContent>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        <CollapsibleContent className="flex-1 overflow-y-auto px-4 pb-4">
           {trayTotal === 0 ? (
-            <p className="text-xs text-neutral-500">
+            <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
               Drag modules here to take them out of a case. Imported modules that don't fit land here too.
             </p>
           ) : (
@@ -449,11 +558,12 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
               ))}
             </div>
           )}
-        </div>
+        </CollapsibleContent>
+        </Collapsible>
       </div>
-      <div className="p-4">
+      <Section title="File" icon={Upload}>
         <FileActions state={state} dispatch={dispatch} />
-      </div>
+      </Section>
     </aside>
   );
 }

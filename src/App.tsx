@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import { Canvas, clampZoom, zoomAt, type View } from './components/Canvas';
 import { CaseView, type DropPreview } from './components/CaseView';
-import { ChatPanel } from './components/ChatPanel';
 import { ModulePanel } from './components/ModulePanel';
 import { Sidebar } from './components/Sidebar';
 import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowAtY, rowInsertIndex, rowTypeOf } from './lib/geometry';
@@ -9,6 +8,14 @@ import { nearestFreeCol } from './lib/placement';
 import { SIDEWAYS_COLS, allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
 import { historyReducer, isOutOfBounds, loadState, reducer, saveState, type Action } from './lib/store';
 import type { AppState, CaseItem, ModuleItem, Rotation, RowType } from './lib/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Toaster } from '@/components/ui/sonner';
+import { Kbd } from '@/components/ui/kbd';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type DropTarget =
   | { kind: 'case'; caseId: string; row: number; col: number; rotation: Rotation; valid: boolean }
@@ -51,7 +58,6 @@ const rowAction = (from: { caseId: string; row: number }, t: RowSpot): Action =>
     : { type: 'swapRows', aCaseId: from.caseId, aRow: from.row, bCaseId: t.caseId, bRow: t.row };
 
 const DRAG_THRESHOLD = 4;
-const CHAT_OPEN_KEY = 'rack-canvas:chat-open';
 
 const isTyping = (e: KeyboardEvent) =>
   e.target instanceof HTMLElement && (e.target.closest('input, textarea, select') || e.target.isContentEditable);
@@ -72,20 +78,7 @@ export default function App() {
   const [rowDrag, setRowDrag] = useState<RowDrag | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
-  const [chatOpen, setChatOpen] = useState(() => {
-    try {
-      return localStorage.getItem(CHAT_OPEN_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(CHAT_OPEN_KEY, chatOpen ? '1' : '0');
-    } catch {
-      // ignore
-    }
-  }, [chatOpen]);
+  const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const trayRef = useRef<HTMLDivElement>(null);
@@ -346,6 +339,10 @@ export default function App() {
   const ghostH = isSideways(ghostRotation) ? ghostShort : ghostLong;
 
   const editingCase = state.cases.find((c) => c.id === editingCaseId) ?? null;
+  const deletingCase = state.cases.find((c) => c.id === deletingCaseId) ?? null;
+  const deletingLocked = deletingCase
+    ? state.modules.filter((m) => m.locked && m.placement?.caseId === deletingCase.id).length
+    : 0;
 
   return (
     <div className={`flex h-full ${drag || rowDrag ? 'cursor-grabbing select-none' : ''}`}>
@@ -377,14 +374,7 @@ export default function App() {
               onRowGripPointerDown={onRowGripPointerDown}
               onMove={(id, x, y) => dispatch({ type: 'updateCase', id, patch: { x, y } })}
               onEdit={setEditingCaseId}
-              onDelete={(id) => {
-                const c = state.cases.find((x) => x.id === id);
-                const locked = state.modules.filter((m) => m.locked && m.placement?.caseId === id).length;
-                const note = locked ? ` ${locked} locked module(s) will be unlocked.` : '';
-                if (c && confirm(`Delete “${c.name}”? Its modules go back to the tray.${note}`)) {
-                  dispatch({ type: 'deleteCase', id });
-                }
-              }}
+              onDelete={setDeletingCaseId}
             />
           ))}
         </Canvas>
@@ -409,15 +399,8 @@ export default function App() {
             if (r) setView((v) => zoomAt(v, r.width / 2, r.height / 2, factor));
           }}
           onFit={() => fitToContent(state.cases)}
-          chatOpen={chatOpen}
-          onToggleChat={() => setChatOpen((o) => !o)}
         />
       </main>
-
-      {/* Kept mounted while hidden so a reply keeps streaming (and gets saved) after closing. */}
-      <div className={chatOpen ? 'contents' : 'hidden'}>
-        <ChatPanel state={state} selectedId={selectedId} onClose={() => setChatOpen(false)} />
-      </div>
 
       {drag && !ghostSnapped && (
         <div
@@ -439,7 +422,29 @@ export default function App() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={deletingCase !== null}
+        onOpenChange={(open) => !open && setDeletingCaseId(null)}
+        title={`Delete “${deletingCase?.name ?? ''}”?`}
+        description={`Its modules go back to the tray.${deletingLocked ? ` ${deletingLocked} locked module(s) will be unlocked.` : ''}`}
+        confirmLabel="Delete"
+        onConfirm={() => deletingCase && dispatch({ type: 'deleteCase', id: deletingCase.id })}
+      />
+      <Toaster />
     </div>
+  );
+}
+
+function Tip({ label, keys, children }: { label: string; keys?: string; children: React.ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent>
+        {label}
+        {keys && <Kbd className="ml-2">{keys}</Kbd>}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -451,37 +456,36 @@ function Toolbar(props: {
   onRedo: () => void;
   onZoom: (factor: number) => void;
   onFit: () => void;
-  chatOpen: boolean;
-  onToggleChat: () => void;
 }) {
-  const btn = 'rounded px-2 py-1 text-sm text-neutral-200 hover:bg-neutral-700 disabled:opacity-40';
   return (
-    <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg bg-neutral-800/90 p-1 shadow-lg ring-1 ring-black/40 backdrop-blur">
-      <button className={btn} onClick={props.onUndo} disabled={!props.canUndo} title="Undo (⌘Z)">
-        Undo
-      </button>
-      <button className={btn} onClick={props.onRedo} disabled={!props.canRedo} title="Redo (⇧⌘Z)">
-        Redo
-      </button>
-      <span className="mx-1 h-5 w-px bg-neutral-600" />
-      <button className={btn} onClick={() => props.onZoom(1 / 1.2)} title="Zoom out">
-        −
-      </button>
-      <span className="w-12 text-center text-xs text-neutral-400 tabular-nums">{Math.round(props.zoom * 100)}%</span>
-      <button className={btn} onClick={() => props.onZoom(1.2)} title="Zoom in">
-        +
-      </button>
-      <button className={btn} onClick={props.onFit} title="Fit all cases">
-        Fit
-      </button>
-      <span className="mx-1 h-5 w-px bg-neutral-600" />
-      <button
-        className={`${btn} ${props.chatOpen ? 'bg-sky-700 hover:bg-sky-600' : ''}`}
-        onClick={props.onToggleChat}
-        title="Layout advisor chat"
-      >
-        Chat
-      </button>
+    <div className="absolute top-3 right-3 flex items-center gap-1 rounded-xl border border-border/60 bg-card/80 p-1 shadow-xl shadow-black/30 backdrop-blur-md">
+      <Tip label="Undo" keys="⌘Z">
+        <Button variant="ghost" size="sm" onClick={props.onUndo} disabled={!props.canUndo}>
+          Undo
+        </Button>
+      </Tip>
+      <Tip label="Redo" keys="⇧⌘Z">
+        <Button variant="ghost" size="sm" onClick={props.onRedo} disabled={!props.canRedo}>
+          Redo
+        </Button>
+      </Tip>
+      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Tip label="Zoom out">
+        <Button variant="ghost" size="sm" onClick={() => props.onZoom(1 / 1.2)}>
+          −
+        </Button>
+      </Tip>
+      <span className="w-12 text-center text-xs text-muted-foreground tabular-nums">{Math.round(props.zoom * 100)}%</span>
+      <Tip label="Zoom in">
+        <Button variant="ghost" size="sm" onClick={() => props.onZoom(1.2)}>
+          +
+        </Button>
+      </Tip>
+      <Tip label="Fit all cases">
+        <Button variant="ghost" size="sm" onClick={props.onFit}>
+          Fit
+        </Button>
+      </Tip>
     </div>
   );
 }
@@ -505,87 +509,78 @@ function EditCaseDialog({
   const outOfBounds = modules.filter((m) => isOutOfBounds(m, { id: c.id, rows, hp, rowTypes: types }));
   const evicted = outOfBounds.length;
   const lockedEvicted = outOfBounds.filter((m) => m.locked).length;
-  const input =
-    'w-full rounded border border-neutral-700 bg-neutral-900 px-2 py-1 text-sm text-neutral-100 focus:border-sky-500 focus:outline-none';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onPointerDown={onClose}>
-      <form
-        className="w-80 space-y-3 rounded-lg bg-neutral-800 p-5 shadow-2xl ring-1 ring-black/50"
-        onPointerDown={(e) => e.stopPropagation()}
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave({ name: name.trim() || c.name, rows, hp, rowTypes: types });
-        }}
-      >
-        <h2 className="text-sm font-semibold text-neutral-100">Edit case</h2>
-        <label className="block text-xs text-neutral-400">
-          Name
-          <input className={input} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-        </label>
-        <div className="flex gap-2">
-          <label className="flex-1 text-xs text-neutral-400">
-            Rows
-            <input
-              type="number"
-              min={1}
-              max={12}
-              className={input}
-              value={rows}
-              onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
-            />
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="w-80 sm:max-w-80">
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave({ name: name.trim() || c.name, rows, hp, rowTypes: types });
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Edit case</DialogTitle>
+          </DialogHeader>
+          <label className="block text-xs text-muted-foreground">
+            Name
+            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
           </label>
-          <label className="flex-1 text-xs text-neutral-400">
-            Width (HP)
-            <input
-              type="number"
-              min={4}
-              max={300}
-              className={input}
-              value={hp}
-              onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
-            />
-          </label>
-        </div>
-        <div className="text-xs text-neutral-400">
-          Row heights
-          <div className="mt-1 flex flex-wrap gap-1">
-            {types.map((t, i) => (
-              <button
-                key={i}
-                type="button"
-                title="Toggle 3U / 1U"
-                className={`rounded px-2 py-0.5 text-xs ${
-                  t === '1U' ? 'bg-sky-700 text-white' : 'bg-neutral-900 text-neutral-300 hover:bg-neutral-700'
-                }`}
-                onClick={() => setRowTypes(types.map((x, j) => (j === i ? (x === '1U' ? '3U' : '1U') : x)))}
-              >
-                {i + 1}: {t}
-              </button>
-            ))}
+          <div className="flex gap-2">
+            <label className="flex-1 text-xs text-muted-foreground">
+              Rows
+              <Input
+                type="number"
+                min={1}
+                max={12}
+                value={rows}
+                onChange={(e) => setRows(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
+            <label className="flex-1 text-xs text-muted-foreground">
+              Width (HP)
+              <Input
+                type="number"
+                min={4}
+                max={300}
+                value={hp}
+                onChange={(e) => setHp(Math.max(1, Number(e.target.value) || 1))}
+              />
+            </label>
           </div>
-        </div>
-        {lockedEvicted > 0 ? (
-          <p className="text-xs text-red-400">
-            {lockedEvicted} locked module(s) wouldn't fit. Unlock them or pick a larger size.
-          </p>
-        ) : (
-          evicted > 0 && (
-            <p className="text-xs text-amber-400">{evicted} module(s) won't fit and will move to the tray.</p>
-          )
-        )}
-        <div className="flex justify-end gap-2">
-          <button type="button" className="rounded px-3 py-1 text-sm text-neutral-300 hover:bg-neutral-700" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="rounded bg-sky-600 px-3 py-1 text-sm text-white hover:bg-sky-500 disabled:opacity-50"
-            disabled={lockedEvicted > 0}
-          >
-            Save
-          </button>
-        </div>
-      </form>
-    </div>
+          <div className="text-xs text-muted-foreground">
+            Row heights
+            <div className="mt-1 flex flex-wrap gap-1">
+              {types.map((t, i) => (
+                <Button
+                  key={i}
+                  type="button"
+                  size="xs"
+                  variant={t === '1U' ? 'default' : 'secondary'}
+                  title="Toggle 3U / 1U"
+                  onClick={() => setRowTypes(types.map((x, j) => (j === i ? (x === '1U' ? '3U' : '1U') : x)))}
+                >
+                  {i + 1}: {t}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {lockedEvicted > 0 ? (
+            <p className="text-xs text-destructive">
+              {lockedEvicted} locked module(s) wouldn't fit. Unlock them or pick a larger size.
+            </p>
+          ) : (
+            evicted > 0 && <p className="text-xs text-amber-400">{evicted} module(s) won't fit and will move to the tray.</p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button disabled={lockedEvicted > 0}>Save</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
