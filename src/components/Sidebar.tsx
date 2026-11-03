@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ChevronDown, Download, Link2, Plus, Trash2, Upload, Lock, LockOpen, RotateCw, Copy, Inbox, LayoutGrid, Boxes, Package, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +27,15 @@ const TRAY_SIZES: { value: TraySize; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: '1u', label: '1U' },
   { value: '3u', label: '3U' },
+];
+
+type TrayWidth = 'any' | 'narrow' | 'medium' | 'wide' | 'xwide';
+const TRAY_WIDTHS: { value: TrayWidth; label: string; min: number; max: number }[] = [
+  { value: 'any', label: 'Any width', min: 0, max: Infinity },
+  { value: 'narrow', label: '1–6 HP', min: 1, max: 6 },
+  { value: 'medium', label: '7–12 HP', min: 7, max: 12 },
+  { value: 'wide', label: '13–20 HP', min: 13, max: 20 },
+  { value: 'xwide', label: '21+ HP', min: 21, max: Infinity },
 ];
 
 const CASE_PRESETS = [
@@ -416,14 +426,19 @@ interface Props {
 export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, selectedId, onModulePointerDown }: Props) {
   const [filter, setFilter] = useState('');
   const [size, setSize] = useState<TraySize>('all');
+  const [width, setWidth] = useState<TrayWidth>('any');
   const tray = useMemo(() => {
     const q = filter.trim().toLowerCase();
     return state.modules
       .filter((m) => !m.placement)
       .filter((m) => size === 'all' || m.is1u === (size === '1u'))
+      .filter((m) => {
+        const w = TRAY_WIDTHS.find((x) => x.value === width)!;
+        return m.hp >= w.min && m.hp <= w.max;
+      })
       .filter((m) => !q || `${m.name} ${m.vendor} ${m.description}`.toLowerCase().includes(q))
       .sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
-  }, [state.modules, filter, size]);
+  }, [state.modules, filter, size, width]);
   const trayTotal = state.modules.filter((m) => !m.placement).length;
 
   const [trayOpen, setTrayOpen] = useState(true);
@@ -506,6 +521,18 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
+              <Select value={width} onValueChange={(v) => setWidth(v as TrayWidth)}>
+                <SelectTrigger size="sm" className="mb-3 w-full" aria-label="Filter by module width">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TRAY_WIDTHS.map((w) => (
+                    <SelectItem key={w.value} value={w.value}>
+                      {w.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </>
           )}
           </CollapsibleContent>
