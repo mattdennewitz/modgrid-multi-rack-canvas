@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
-import { HP_PX, ROW_PX } from '../lib/geometry';
+import { HP_PX, ROW_1U_PX, ROW_PX, rowTypeOf } from '../lib/geometry';
 import { extractUserId } from '../lib/parseCollection';
 import { extractRackId } from '../lib/parseRack';
 import { modulePageUrl } from '../lib/modulargrid';
+import { nextRotation } from '../lib/rotation';
 import { isAppState, type Action } from '../lib/store';
-import type { AppState, CollectionEntry, CollectionModule, ImportedRack, ModuleItem } from '../lib/types';
+import type { AppState, CollectionEntry, CollectionModule, ImportedRack, ModuleItem, RowType } from '../lib/types';
 import { ModulePanel } from './ModulePanel';
 
 const TRAY_SCALE = 0.5;
@@ -97,7 +98,9 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
         kind: 'ok',
         text:
           `Imported ${rack.modules.length} modules from “${rack.name}”.` +
-          (oneU ? ` ${oneU} 1U module(s) went to the tray (1U rows aren't supported yet).` : '') +
+          (oneU
+            ? ` ${oneU} 1U module(s) went to the tray: imported cases have 3U rows only. Switch a row to 1U in Edit case, then drag them in.`
+            : '') +
           (rack.format !== 'e' ? ' Warning: this is not a Eurorack rack.' : ''),
       });
       setUrl('');
@@ -195,12 +198,15 @@ function AddCase({ dispatch }: { dispatch: React.Dispatch<Action> }) {
 function SelectedModule({
   module,
   caseName,
+  rowType,
   dispatch,
 }: {
   module: ModuleItem;
   caseName: string | null;
+  rowType: RowType | null;
   dispatch: React.Dispatch<Action>;
 }) {
+  const rotation = module.placement?.rotation ?? 0;
   return (
     <div className="space-y-2 text-sm">
       <div>
@@ -222,7 +228,9 @@ function SelectedModule({
       </div>
       <div className="text-xs text-neutral-500">
         {module.placement
-          ? `In ${caseName ?? 'a case'}, row ${module.placement.row}, HP ${module.placement.col}`
+          ? `In ${caseName ?? 'a case'}, row ${module.placement.row}, HP ${module.placement.col}${
+              rotation ? ` · rotated ${rotation}°` : ''
+            }`
           : 'In the tray'}
         {' · from '}
         {module.source}
@@ -236,6 +244,16 @@ function SelectedModule({
             title="Toggle lock (L)"
           >
             {module.locked ? 'Unlock' : 'Lock'}
+          </button>
+        )}
+        {module.placement && rowType && (
+          <button
+            className={buttonClass}
+            disabled={module.locked || nextRotation(module, rowType, rotation) === rotation}
+            onClick={() => dispatch({ type: 'rotateModule', id: module.id })}
+            title="Rotate (R)"
+          >
+            Rotate
           </button>
         )}
         {module.placement && (
@@ -355,7 +373,12 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
       </Section>
       {selected && (
         <Section title="Selected module">
-          <SelectedModule module={selected} caseName={selectedCase?.name ?? null} dispatch={dispatch} />
+          <SelectedModule
+            module={selected}
+            caseName={selectedCase?.name ?? null}
+            rowType={selected.placement && selectedCase ? rowTypeOf(selectedCase, selected.placement.row) : null}
+            dispatch={dispatch}
+          />
         </Section>
       )}
       <div
@@ -389,7 +412,7 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
                   key={m.id}
                   module={m}
                   width={m.hp * HP_PX * TRAY_SCALE}
-                  height={ROW_PX * TRAY_SCALE}
+                  height={(m.is1u ? ROW_1U_PX : ROW_PX) * TRAY_SCALE}
                   className={`cursor-grab rounded-sm ${m.id === draggingId ? 'opacity-25' : ''} ${
                     m.id === selectedId ? 'outline-2 outline-sky-400' : ''
                   }`}

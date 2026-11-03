@@ -1,14 +1,16 @@
 import { useRef, useState } from 'react';
-import { CASE_PAD, HP_PX, ROW_PX, caseSize, colLeft, rowHeight, rowTop, rowTypeOf, snapToGrid } from '../lib/geometry';
+import { CASE_PAD, HP_PX, caseSize, colLeft, rowHeight, rowTop, rowTypeOf, snapToGrid } from '../lib/geometry';
 import { sumPower } from '../lib/modulargrid';
 import { rowGaps } from '../lib/placement';
-import type { CaseItem, ModuleItem } from '../lib/types';
+import { footprintCols } from '../lib/rotation';
+import type { CaseItem, ModuleItem, Rotation } from '../lib/types';
 import { ModulePanel } from './ModulePanel';
 
 export interface DropPreview {
   module: ModuleItem;
   row: number;
   col: number;
+  rotation: Rotation;
   valid: boolean;
 }
 
@@ -87,7 +89,7 @@ export function CaseView({
   const [offset, setOffset] = useState<{ dx: number; dy: number } | null>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
 
-  const usedHp = modules.reduce((n, m) => n + m.hp, 0);
+  const usedHp = modules.reduce((n, m) => n + footprintCols(m, m.placement?.rotation), 0);
   const power = sumPower(modules);
   const x = offset ? snapToGrid(c.x + offset.dx) : c.x;
   const y = offset ? snapToGrid(c.y + offset.dy) : c.y;
@@ -177,12 +179,14 @@ export function CaseView({
 
       {modules.map((m) => {
         const p = m.placement!;
+        const rotation = p.rotation ?? 0;
         return (
           <ModulePanel
             key={m.id}
             module={m}
-            width={m.hp * HP_PX}
-            height={ROW_PX}
+            width={footprintCols(m, rotation) * HP_PX}
+            height={rowHeight(rowTypeOf(c, p.row))}
+            rotation={rotation}
             className={`absolute ${m.locked ? 'cursor-default' : 'cursor-grab'} ${
               m.id === draggingId ? 'opacity-25' : ''
             } ${m.id === selectedId ? 'z-10 outline-2 outline-sky-400' : ''}`}
@@ -202,12 +206,18 @@ export function CaseView({
           style={{
             left: CASE_PAD + colLeft(preview.col),
             top: rowTop(c, preview.row),
-            width: preview.module.hp * HP_PX,
-            height: ROW_PX,
+            width: footprintCols(preview.module, preview.rotation) * HP_PX,
+            height: rowHeight(rowTypeOf(c, preview.row)),
           }}
         >
           {preview.valid && (
-            <ModulePanel module={preview.module} width={preview.module.hp * HP_PX} height={ROW_PX} className="opacity-80" />
+            <ModulePanel
+              module={preview.module}
+              width={footprintCols(preview.module, preview.rotation) * HP_PX}
+              height={rowHeight(rowTypeOf(c, preview.row))}
+              rotation={preview.rotation}
+              className="opacity-80"
+            />
           )}
         </div>
       )}
