@@ -4,21 +4,32 @@ import { CaseView, type DropPreview } from './components/CaseView';
 import { ModulePanel } from './components/ModulePanel';
 import { Sidebar } from './components/Sidebar';
 import { HP_PX, ROW_1U_PX, ROW_PX, caseSize, pointToSlot, rowAtY, rowInsertIndex, rowTypeOf } from './lib/geometry';
-import { nearestFreeCol } from './lib/placement';
+import { nearestFreeCol, planSwap, type Swap } from './lib/placement';
 import { SIDEWAYS_COLS, allowedRotations, footprintCols, isSideways, nextRotation } from './lib/rotation';
-import { historyReducer, isOutOfBounds, loadState, reducer, saveState, type Action } from './lib/store';
-import type { AppState, CaseItem, ModuleItem, Rotation, RowType } from './lib/types';
+import {
+  activeCanvas,
+  allPlaced,
+  duplicateCase,
+  historyReducer,
+  isOutOfBounds,
+  loadState,
+  reducer,
+  saveState,
+  type Action,
+} from './lib/store';
+import type { AppState, CaseItem, ModuleItem, PlacedModule, Rotation, RowType } from './lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Toaster } from '@/components/ui/sonner';
+import { toast } from 'sonner';
 import { Kbd } from '@/components/ui/kbd';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 
 type DropTarget =
-  | { kind: 'case'; caseId: string; row: number; col: number; rotation: Rotation; valid: boolean }
+  | { kind: 'case'; caseId: string; row: number; col: number; rotation: Rotation; valid: boolean; swaps?: Swap[] }
   | { kind: 'tray' }
   | null;
 
@@ -64,6 +75,10 @@ const isTyping = (e: KeyboardEvent) =>
 
 const inside = (r: DOMRect, x: number, y: number) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 
+/** A record by id, from the active canvas's placed copies or the global pool. */
+const recordOf = (s: AppState, id: string): ModuleItem | undefined =>
+  activeCanvas(s).placed.find((m) => m.id === id) ?? s.modules.find((m) => m.id === id);
+
 export default function App() {
   const [history, dispatchHistory] = useReducer(historyReducer, undefined, () => ({
     past: [],
@@ -71,6 +86,7 @@ export default function App() {
     future: [],
   }));
   const state = history.present;
+  const active = activeCanvas(state);
   const dispatch = dispatchHistory as React.Dispatch<Action>;
 
   const [view, setView] = useState<View>({ x: 40, y: 40, zoom: 0.6 });
@@ -79,6 +95,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCaseId, setEditingCaseId] = useState<string | null>(null);
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const trayRef = useRef<HTMLDivElement>(null);
@@ -91,7 +108,13 @@ export default function App() {
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
 
-  useEffect(() => saveState(state), [state]);
+  // Autosave, warning once if storage is full rather than losing work silently.
+  const saved = useRef(true);
+  useEffect(() => {
+    const ok = saveState(state);
+    if (!ok && saved.current) toast.error("Couldn't autosave — storage is full. Export your work to keep it.");
+    saved.current = ok;
+  }, [state]);
 
   const fitToContent = useCallback((cases: CaseItem[]) => {
     const el = canvasRef.current;
@@ -110,13 +133,25 @@ export default function App() {
     });
   }, []);
 
-  // Frame saved cases on load, and bring newly added cases into view.
-  useEffect(() => fitToContent(latest.current.state.cases), [fitToContent]);
-  const caseCount = useRef(state.cases.length);
+  // Frame the active canvas on load and on every switch, and drop anything selected or half-dragged on the canvas you
+  // just left: the window pointer handlers read `latest.current.drag`, which would still hold one of its modules.
+  // Declared before the auto-fit effect below, which compares the canvas id so a switch doesn't also fit there.
   useEffect(() => {
-    if (state.cases.length > caseCount.current) fitToContent(state.cases);
-    caseCount.current = state.cases.length;
-  }, [state.cases, fitToContent]);
+    setSelectedId(null);
+    setEditingCaseId(null);
+    setDeletingCaseId(null);
+    setDrag(null);
+    setRowDrag(null);
+    pending.current = null;
+    fitToContent(activeCanvas(latest.current.state).cases);
+  }, [state.activeId, fitToContent]);
+
+  // Bring newly added cases into view, but only when the canvas itself didn't change.
+  const seen = useRef({ id: state.activeId, count: active.cases.length });
+  useEffect(() => {
+    if (seen.current.id === state.activeId && active.cases.length > seen.current.count) fitToContent(active.cases);
+    seen.current = { id: state.activeId, count: active.cases.length };
+  }, [state.activeId, active.cases, fitToContent]);
 
   // --- module drag & drop ---------------------------------------------------
 
@@ -128,6 +163,7 @@ export default function App() {
     rotation: Rotation,
   ): DropTarget => {
     const { state, view } = latest.current;
+    const canvas = activeCanvas(state);
     const trayRect = trayRef.current?.getBoundingClientRect();
     if (trayRect && inside(trayRect, clientX, clientY)) return { kind: 'tray' };
 
@@ -137,13 +173,26 @@ export default function App() {
     const wy = (clientY - canvasRect.top - view.y) / view.zoom;
 
     // Later cases render on top, so test them first.
-    for (const c of [...state.cases].reverse()) {
+    for (const c of [...canvas.cases].reverse()) {
       const slot = pointToSlot(c, wx, wy, module, rotation, grabFx);
       if (!slot) continue;
       const suits = allowedRotations(module, rowTypeOf(c, slot.row)).includes(slot.rotation);
+      // Dropping a placed module onto another bumps that one into the space just vacated, when it fits there.
+      const swap = suits
+        ? planSwap(
+            canvas.placed,
+            canvas.cases,
+            module,
+            { caseId: c.id, row: slot.row, col: slot.col, rotation: slot.rotation },
+            isSideways(slot.rotation) ? SIDEWAYS_COLS : undefined,
+          )
+        : null;
+      if (swap) {
+        return { kind: 'case', caseId: c.id, row: slot.row, col: swap.col, rotation: slot.rotation, valid: true, swaps: swap.swaps };
+      }
       const col = suits
         ? nearestFreeCol(
-            state.modules,
+            canvas.placed,
             c,
             slot.row,
             slot.col,
@@ -161,13 +210,14 @@ export default function App() {
   /** The case under the cursor, as a row-drop target; null unless it has the dragged row's width. */
   const findRowTarget = (clientX: number, clientY: number, from: { caseId: string; row: number }): RowDrag['target'] => {
     const { state, view } = latest.current;
+    const canvas = activeCanvas(state);
     const canvasRect = canvasRef.current?.getBoundingClientRect();
-    const source = state.cases.find((c) => c.id === from.caseId);
+    const source = canvas.cases.find((c) => c.id === from.caseId);
     if (!canvasRect || !source || !inside(canvasRect, clientX, clientY)) return null;
     const wx = (clientX - canvasRect.left - view.x) / view.zoom;
     const wy = (clientY - canvasRect.top - view.y) / view.zoom;
     // Later cases render on top; the first one under the cursor is the only candidate.
-    const c = [...state.cases].reverse().find((x) => {
+    const c = [...canvas.cases].reverse().find((x) => {
       const { w, h } = caseSize(x);
       return wx >= x.x && wx <= x.x + w && wy >= x.y && wy <= x.y + h;
     });
@@ -257,11 +307,16 @@ export default function App() {
       if (!d) return;
       setDrag(null);
       const t = d.target;
+      // Dropping a placed copy on the tray takes it out of its case; the inventory keeps the module.
       if (t?.kind === 'tray' && d.module.placement) {
         dispatch({ type: 'placeModule', id: d.module.id, placement: null });
       } else if (t?.kind === 'case' && t.valid) {
         const placement = { caseId: t.caseId, row: t.row, col: t.col, ...(t.rotation ? { rotation: t.rotation } : {}) };
-        dispatch({ type: 'placeModule', id: d.module.id, placement });
+        dispatch(
+          t.swaps
+            ? { type: 'placeModules', placements: [{ id: d.module.id, placement }, ...t.swaps] }
+            : { type: 'placeModule', id: d.module.id, placement },
+        );
       }
     };
 
@@ -275,14 +330,14 @@ export default function App() {
         e.preventDefault();
         dispatchHistory({ type: 'redo' });
       } else if (!mod && e.key.toLowerCase() === 'l' && selectedRef.current) {
-        const m = latest.current.state.modules.find((x) => x.id === selectedRef.current);
+        const m = recordOf(latest.current.state, selectedRef.current);
         if (m?.placement) dispatch({ type: 'setLocked', id: m.id, locked: !m.locked });
       } else if (!mod && e.key.toLowerCase() === 'r') {
         const { state, drag } = latest.current;
         if (drag) {
           // Mid-drag: turn the module as it would sit in the row under the cursor.
           const t = drag.target?.kind === 'case' ? drag.target : null;
-          const c = t && state.cases.find((x) => x.id === t.caseId);
+          const c = t && activeCanvas(state).cases.find((x) => x.id === t.caseId);
           const rowType: RowType | null = c && t ? rowTypeOf(c, t.row) : null;
           const rotation = nextRotation(drag.module, rowType, t ? t.rotation : drag.rotation);
           setDrag({ ...drag, rotation, target: findTarget(drag.clientX, drag.clientY, drag.module, drag.grabFx, rotation) });
@@ -296,10 +351,11 @@ export default function App() {
         setSelectedId(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedRef.current) {
         e.preventDefault();
-        const m = latest.current.state.modules.find((x) => x.id === selectedRef.current);
+        const m = recordOf(latest.current.state, selectedRef.current);
         if (!m || m.locked) return;
-        // First press sends a placed module to the tray; pressing again on a tray module removes it.
-        dispatch(m.placement ? { type: 'placeModule', id: m.id, placement: null } : { type: 'removeModule', id: m.id });
+        // On a placed copy it takes the copy out of its case; on an inventory entry it removes the module (after a check).
+        if (m.placement) dispatch({ type: 'placeModule', id: m.id, placement: null });
+        else requestRemove(m.id);
       }
     };
 
@@ -317,6 +373,40 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Removing a module from the pool takes it out of every canvas, so ask first when it is placed somewhere.
+  const requestRemove = (id: string) => {
+    const { state } = latest.current;
+    const m = state.modules.find((x) => x.id === id);
+    if (!m) return;
+    // The locked copy may be on a canvas you can't see, so name it.
+    const lockedIn = state.canvases.find((c) => c.placed.some((x) => x.moduleId === m.moduleId && x.locked));
+    if (lockedIn) {
+      toast.error(`“${m.name}” has a locked copy in “${lockedIn.name}”. Unlock it first.`);
+    } else if (!allPlaced(state).some((x) => x.moduleId === m.moduleId)) {
+      dispatch({ type: 'removeModule', id });
+    } else {
+      setRemovingId(id);
+    }
+  };
+
+  const onDuplicateCase = (id: string) => {
+    const { copied } = duplicateCase(activeCanvas(latest.current.state), id);
+    dispatch({ type: 'duplicateCase', id });
+    toast.success(`Copied the case with ${copied} module${copied === 1 ? '' : 's'}.`);
+  };
+
+  // Forking lands you on the fork; primary stays where it was.
+  const onForkCanvas = (id: string) => {
+    const source = latest.current.state.canvases.find((c) => c.id === id);
+    if (!source) return;
+    dispatch({ type: 'forkCanvas', id });
+    const cases = source.cases.length;
+    const modules = source.placed.length;
+    toast.success(
+      `Forked “${source.name}” — ${cases} case${cases === 1 ? '' : 's'}, ${modules} module${modules === 1 ? '' : 's'}.`,
+    );
+  };
+
   // --- render ---------------------------------------------------------------
 
   const previewFor = (caseId: string): DropPreview | null =>
@@ -330,6 +420,15 @@ export default function App() {
         }
       : null;
 
+  // While a swap is previewed the bumped module sits in the vacated space; moving off reverts it by itself.
+  const swaps = drag?.target?.kind === 'case' ? drag.target.swaps : undefined;
+  const shownPlaced: PlacedModule[] = swaps
+    ? active.placed.map((m) => {
+        const s = swaps.find((x) => x.id === m.id);
+        return s ? { ...m, placement: s.placement } : m;
+      })
+    : active.placed;
+
   const ghostSnapped = drag?.target?.kind === 'case' && drag.target.valid;
   const ghostRotation = drag?.target?.kind === 'case' ? drag.target.rotation : (drag?.rotation ?? 0);
   // The free-floating ghost is the panel itself, turned: a sideways 3U panel is ROW_PX wide and hp*HP_PX tall.
@@ -338,10 +437,16 @@ export default function App() {
   const ghostW = isSideways(ghostRotation) ? ghostLong : ghostShort;
   const ghostH = isSideways(ghostRotation) ? ghostShort : ghostLong;
 
-  const editingCase = state.cases.find((c) => c.id === editingCaseId) ?? null;
-  const deletingCase = state.cases.find((c) => c.id === deletingCaseId) ?? null;
-  const deletingLocked = deletingCase
-    ? state.modules.filter((m) => m.locked && m.placement?.caseId === deletingCase.id).length
+  const editingCase = active.cases.find((c) => c.id === editingCaseId) ?? null;
+  const deletingCase = active.cases.find((c) => c.id === deletingCaseId) ?? null;
+  const removing = state.modules.find((m) => m.id === removingId) ?? null;
+  // Scoped like the tray badge, but removal reaches every canvas, so the copy has to say both.
+  const removingHere = removing ? active.placed.filter((m) => m.moduleId === removing.moduleId) : [];
+  const removingElsewhere = removing
+    ? allPlaced(state).filter((m) => m.moduleId === removing.moduleId).length - removingHere.length
+    : 0;
+  const removingOtherCanvases = removing
+    ? state.canvases.filter((c) => c.id !== active.id && c.placed.some((m) => m.moduleId === removing.moduleId)).length
     : 0;
 
   return (
@@ -351,18 +456,19 @@ export default function App() {
         dispatch={dispatch}
         trayRef={trayRef}
         trayIsTarget={drag?.target?.kind === 'tray'}
-        draggingId={drag?.module.id ?? null}
         selectedId={selectedId}
         onModulePointerDown={onModulePointerDown}
+        onRemoveModule={requestRemove}
+        onForkCanvas={onForkCanvas}
       />
 
       <main className="relative flex-1">
         <Canvas view={view} setView={setView} canvasRef={canvasRef} onBackgroundClick={() => setSelectedId(null)}>
-          {state.cases.map((c) => (
+          {active.cases.map((c) => (
             <CaseView
               key={c.id}
               c={c}
-              modules={state.modules.filter((m) => m.placement?.caseId === c.id)}
+              modules={shownPlaced.filter((m) => m.placement.caseId === c.id)}
               zoom={view.zoom}
               preview={previewFor(c.id)}
               draggingId={drag?.module.id ?? null}
@@ -374,16 +480,17 @@ export default function App() {
               onRowGripPointerDown={onRowGripPointerDown}
               onMove={(id, x, y) => dispatch({ type: 'updateCase', id, patch: { x, y } })}
               onEdit={setEditingCaseId}
+              onDuplicate={onDuplicateCase}
               onDelete={setDeletingCaseId}
             />
           ))}
         </Canvas>
 
-        {state.cases.length === 0 && (
+        {active.cases.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="max-w-sm text-center text-sm text-neutral-500">
               Import a rack from ModularGrid or add an empty case to get started. Drag case headers to arrange them,
-              and drag modules between cases and the tray.
+              and drag modules from the tray into cases, as many times as you like.
             </div>
           </div>
         )}
@@ -398,7 +505,7 @@ export default function App() {
             const r = canvasRef.current?.getBoundingClientRect();
             if (r) setView((v) => zoomAt(v, r.width / 2, r.height / 2, factor));
           }}
-          onFit={() => fitToContent(state.cases)}
+          onFit={() => fitToContent(active.cases)}
         />
       </main>
 
@@ -414,7 +521,7 @@ export default function App() {
       {editingCase && (
         <EditCaseDialog
           c={editingCase}
-          modules={state.modules}
+          modules={active.placed}
           onClose={() => setEditingCaseId(null)}
           onSave={(patch) => {
             dispatch({ type: 'updateCase', id: editingCase.id, patch });
@@ -427,9 +534,26 @@ export default function App() {
         open={deletingCase !== null}
         onOpenChange={(open) => !open && setDeletingCaseId(null)}
         title={`Delete “${deletingCase?.name ?? ''}”?`}
-        description={`Its modules go back to the tray.${deletingLocked ? ` ${deletingLocked} locked module(s) will be unlocked.` : ''}`}
+        description="Its modules are taken out of the case. They stay in your inventory. You can undo."
         confirmLabel="Delete"
         onConfirm={() => deletingCase && dispatch({ type: 'deleteCase', id: deletingCase.id })}
+      />
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => !open && setRemovingId(null)}
+        title={`Remove “${removing?.name ?? ''}”?`}
+        description={
+          // Reads naturally in all three cases: only here, here and elsewhere, or only on canvases you aren't viewing.
+          (removingHere.length === 0
+            ? `It is placed ${removingElsewhere} time${removingElsewhere === 1 ? '' : 's'} on ${removingOtherCanvases} other canvas${removingOtherCanvases === 1 ? '' : 'es'}, and not in “${active.name}”`
+            : `It is placed ${removingHere.length} time${removingHere.length === 1 ? '' : 's'} in “${active.name}”` +
+              (removingElsewhere > 0
+                ? `, and ${removingElsewhere} more time${removingElsewhere === 1 ? '' : 's'} on ${removingOtherCanvases} other canvas${removingOtherCanvases === 1 ? '' : 'es'}`
+                : '')) +
+          `. Removing it from your inventory takes it out of every canvas. You can undo.`
+        }
+        confirmLabel="Remove"
+        onConfirm={() => removing && dispatch({ type: 'removeModule', id: removing.id })}
       />
       <Toaster />
     </div>
@@ -497,7 +621,7 @@ function EditCaseDialog({
   onSave,
 }: {
   c: CaseItem;
-  modules: AppState['modules'];
+  modules: PlacedModule[];
   onClose: () => void;
   onSave: (patch: Partial<CaseItem>) => void;
 }) {
@@ -571,7 +695,7 @@ function EditCaseDialog({
               {lockedEvicted} locked module(s) wouldn't fit. Unlock them or pick a larger size.
             </p>
           ) : (
-            evicted > 0 && <p className="text-xs text-amber-400">{evicted} module(s) won't fit and will move to the tray.</p>
+            evicted > 0 && <p className="text-xs text-amber-400">{evicted} module(s) won't fit and will be taken out of the case.</p>
           )}
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>

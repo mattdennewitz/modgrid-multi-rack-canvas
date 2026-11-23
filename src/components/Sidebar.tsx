@@ -4,7 +4,7 @@ import { extractUserId } from '../lib/parseCollection';
 import { extractRackId } from '../lib/parseRack';
 import { modulePageUrl } from '../lib/modulargrid';
 import { nextRotation } from '../lib/rotation';
-import { isAppState, type Action } from '../lib/store';
+import { activeCanvas, freshState, toAppState, type Action } from '../lib/store';
 import type { AppState, CollectionEntry, CollectionModule, ImportedRack, ModuleItem, RowType } from '../lib/types';
 import { ModulePanel } from './ModulePanel';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,8 @@ import { Label } from '@/components/ui/label';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ConfirmDialog } from './ConfirmDialog';
-import { ChevronDown, Download, Link2, Plus, Trash2, Upload, Lock, LockOpen, RotateCw, Copy, Inbox, LayoutGrid, Boxes, Package, type LucideIcon } from 'lucide-react';
+import { ChevronDown, Download, Link2, Plus, Trash2, Upload, Lock, LockOpen, RotateCw, Inbox, LayoutGrid, Boxes, Package, GitFork, type LucideIcon } from 'lucide-react';
+import { CanvasTree } from './CanvasTree';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -74,18 +75,20 @@ function Section({
   title,
   icon,
   defaultOpen = true,
+  aside,
   children,
 }: {
   title: React.ReactNode;
   icon: LucideIcon;
   defaultOpen?: boolean;
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <Collapsible asChild open={open} onOpenChange={setOpen}>
       <section className="border-b border-border/60 px-4 py-3.5">
-        <SectionHeading open={open} icon={icon}>
+        <SectionHeading open={open} icon={icon} aside={aside}>
           {title}
         </SectionHeading>
         <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
@@ -126,7 +129,7 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
     setMessage({
       kind: failed.length ? 'error' : 'ok',
       text:
-        `Collection has ${entries.length} modules: ${modules.length} added to the tray, ` +
+        `Collection has ${entries.length} modules: ${modules.length} added to your inventory, ` +
         `${entries.length - todo.length} already here.` +
         (failed.length ? ` Couldn't read: ${failed.join(', ')}. Import again to retry.` : ''),
     });
@@ -159,7 +162,7 @@ function ImportRack({ state, dispatch }: { state: AppState; dispatch: React.Disp
         text:
           `Imported ${rack.modules.length} modules from “${rack.name}”.` +
           (oneU
-            ? ` ${oneU} 1U module(s) went to the tray: imported cases have 3U rows only. Switch a row to 1U in Edit case, then drag them in.`
+            ? ` ${oneU} 1U module(s) weren't placed: imported cases have 3U rows only. Switch a row to 1U in Edit case, then drag them in from the tray.`
             : '') +
           (rack.format !== 'e' ? ' Warning: this is not a Eurorack rack.' : ''),
       });
@@ -269,9 +272,14 @@ function SelectedModule({
   module,
   caseName,
   rowType,
+  copies,
   dispatch,
+  onRemove,
 }: {
   module: ModuleItem;
+  /** How many times the module is placed across all cases. */
+  copies: number;
+  onRemove: (id: string) => void;
   caseName: string | null;
   rowType: RowType | null;
   dispatch: React.Dispatch<Action>;
@@ -301,11 +309,11 @@ function SelectedModule({
           ? `In ${caseName ?? 'a case'}, row ${module.placement.row}, HP ${module.placement.col}${
               rotation ? ` · rotated ${rotation}°` : ''
             }`
-          : 'In the tray'}
+          : `In your inventory · placed ${copies} ${copies === 1 ? 'time' : 'times'}`}
         {' · from '}
         {module.source}
       </div>
-      {module.locked && <p className="text-xs text-amber-400">Locked in place. Unlock to move or remove it.</p>}
+      {module.locked && <p className="text-xs text-amber-400">Locked in place. Unlock to move or take it out.</p>}
       <div className="flex flex-wrap gap-2">
         {module.placement && (
           <Button
@@ -328,26 +336,26 @@ function SelectedModule({
             Rotate
           </Button>
         )}
-        {module.placement && (
-          <Button size="sm" variant="secondary"
+        {module.placement ? (
+          <Button
+            size="sm"
+            variant="secondary"
             disabled={module.locked}
+            title="Take this copy out of the case. The module stays in your inventory."
             onClick={() => dispatch({ type: 'placeModule', id: module.id, placement: null })}
           >
-            Send to tray
+            Take out of case
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="destructive"
+            title="Delete this module from your inventory and every case it is in"
+            onClick={() => onRemove(module.id)}
+          >
+            Remove from inventory
           </Button>
         )}
-        <Button size="sm" variant="secondary" onClick={() => dispatch({ type: 'duplicateModule', id: module.id })}>
-          <Copy />
-          Duplicate
-        </Button>
-        <Button
-          size="sm"
-          variant="destructive"
-          disabled={module.locked}
-          onClick={() => dispatch({ type: 'removeModule', id: module.id })}
-        >
-          Remove
-        </Button>
       </div>
     </div>
   );
@@ -368,9 +376,10 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
 
   const importJson = async (file: File) => {
     try {
-      const parsed = JSON.parse(await file.text());
-      if (!isAppState(parsed)) throw new Error('Not a rack canvas file');
-      dispatch({ type: 'replace', state: parsed });
+      // Accepts both the current forest and pre-canvas saves, repairing either into a valid state.
+      const next = toAppState(JSON.parse(await file.text()));
+      if (!next) throw new Error('Not a rack canvas file');
+      dispatch({ type: 'replace', state: next });
     } catch (err) {
       toast.error(`Couldn't load file: ${err instanceof Error ? err.message : err}`);
     }
@@ -394,9 +403,9 @@ function FileActions({ state, dispatch }: { state: AppState; dispatch: React.Dis
         open={confirmClear}
         onOpenChange={setConfirmClear}
         title="Clear everything?"
-        description="This removes all cases and modules. You can undo."
+        description="This removes all canvases, cases and modules. You can undo."
         confirmLabel="Clear"
-        onConfirm={() => dispatch({ type: 'replace', state: { cases: [], modules: [] } })}
+        onConfirm={() => dispatch({ type: 'replace', state: freshState() })}
       />
       <input
         ref={fileRef}
@@ -418,19 +427,29 @@ interface Props {
   dispatch: React.Dispatch<Action>;
   trayRef: React.RefObject<HTMLDivElement | null>;
   trayIsTarget: boolean;
-  draggingId: string | null;
   selectedId: string | null;
   onModulePointerDown: (e: React.PointerEvent<HTMLDivElement>, m: ModuleItem) => void;
+  onRemoveModule: (id: string) => void;
+  onForkCanvas: (id: string) => void;
 }
 
-export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, selectedId, onModulePointerDown }: Props) {
+export function Sidebar({
+  state,
+  dispatch,
+  trayRef,
+  trayIsTarget,
+  selectedId,
+  onModulePointerDown,
+  onRemoveModule,
+  onForkCanvas,
+}: Props) {
   const [filter, setFilter] = useState('');
   const [size, setSize] = useState<TraySize>('all');
   const [width, setWidth] = useState<TrayWidth>('any');
   const tray = useMemo(() => {
     const q = filter.trim().toLowerCase();
+    // `state.modules` is the pool, so every entry is already unplaced.
     return state.modules
-      .filter((m) => !m.placement)
       .filter((m) => size === 'all' || m.is1u === (size === '1u'))
       .filter((m) => {
         const w = TRAY_WIDTHS.find((x) => x.value === width)!;
@@ -439,14 +458,21 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
       .filter((m) => !q || `${m.name} ${m.vendor} ${m.description}`.toLowerCase().includes(q))
       .sort((a, b) => a.vendor.localeCompare(b.vendor) || a.name.localeCompare(b.name));
   }, [state.modules, filter, size, width]);
-  const trayTotal = state.modules.filter((m) => !m.placement).length;
+  const trayTotal = state.modules.length;
+  const active = activeCanvas(state);
+  // Scoped to the canvas you are looking at, so experimental forks don't inflate "how many of these am I using".
+  const placedCount = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of active.placed) counts.set(m.moduleId, (counts.get(m.moduleId) ?? 0) + 1);
+    return counts;
+  }, [active.placed]);
 
   const [trayOpen, setTrayOpen] = useState(true);
-  const selected = state.modules.find((m) => m.id === selectedId) ?? null;
-  const selectedCase = selected?.placement ? state.cases.find((c) => c.id === selected.placement!.caseId) : null;
+  const selected = active.placed.find((m) => m.id === selectedId) ?? state.modules.find((m) => m.id === selectedId) ?? null;
+  const selectedCase = selected?.placement ? active.cases.find((c) => c.id === selected.placement!.caseId) : null;
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-r bg-card">
+    <aside className="flex h-full w-80 shrink-0 flex-col overflow-y-auto border-r bg-card">
       <header className="flex items-center gap-3 border-b border-border/60 px-4 py-4">
         <div className="flex size-9 items-center justify-center rounded-lg bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-sm">
           <LayoutGrid className="size-5" />
@@ -454,11 +480,18 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
         <div className="min-w-0 flex-1">
           <h1 className="text-sm leading-tight font-semibold tracking-tight text-foreground">Rack Canvas</h1>
           <p className="text-xs text-muted-foreground">
-            {state.cases.length} {state.cases.length === 1 ? 'case' : 'cases'} · {state.modules.length}{' '}
-            {state.modules.length === 1 ? 'module' : 'modules'}
+            “{active.name}” · {active.cases.length} {active.cases.length === 1 ? 'case' : 'cases'} · {trayTotal}{' '}
+            {trayTotal === 1 ? 'module' : 'modules'} owned
           </p>
         </div>
       </header>
+      <Section
+        title="Canvases"
+        icon={GitFork}
+        aside={<Badge variant="secondary" className="tabular-nums">{state.canvases.length}</Badge>}
+      >
+        <CanvasTree state={state} dispatch={dispatch} onFork={onForkCanvas} />
+      </Section>
       <Section title="Import from ModularGrid" icon={Download}>
         <ImportRack state={state} dispatch={dispatch} />
       </Section>
@@ -471,7 +504,9 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
             module={selected}
             caseName={selectedCase?.name ?? null}
             rowType={selected.placement && selectedCase ? rowTypeOf(selectedCase, selected.placement.row) : null}
+            copies={placedCount.get(selected.moduleId) ?? 0}
             dispatch={dispatch}
+            onRemove={onRemoveModule}
           />
         </Section>
       )}
@@ -540,7 +575,7 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
         <CollapsibleContent className="flex-1 overflow-y-auto px-4 pb-4">
           {trayTotal === 0 ? (
             <p className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
-              Drag modules here to take them out of a case. Imported modules that don't fit land here too.
+              This is your inventory. Import a rack or collection to fill it, then drag modules into a case, as many times as you like. Drag one back here to take it out of its case.
             </p>
           ) : (
             <div className="flex flex-wrap items-start gap-1.5">
@@ -550,11 +585,15 @@ export function Sidebar({ state, dispatch, trayRef, trayIsTarget, draggingId, se
                   module={m}
                   width={m.hp * HP_PX * TRAY_SCALE}
                   height={(m.is1u ? ROW_1U_PX : ROW_PX) * TRAY_SCALE}
-                  className={`cursor-grab rounded-sm ${m.id === draggingId ? 'opacity-25' : ''} ${
-                    m.id === selectedId ? 'outline-2 outline-sky-400' : ''
-                  }`}
+                  className={`relative cursor-grab rounded-sm ${m.id === selectedId ? 'outline-2 outline-sky-400' : ''}`}
                   onPointerDown={(e) => onModulePointerDown(e, m)}
-                />
+                >
+                  {placedCount.has(m.moduleId) && (
+                    <span className="pointer-events-none absolute top-0.5 right-0.5 rounded-full bg-sky-500 px-1 text-[9px] leading-4 font-semibold text-white tabular-nums shadow">
+                      ×{placedCount.get(m.moduleId)}
+                    </span>
+                  )}
+                </ModulePanel>
               ))}
             </div>
           )}

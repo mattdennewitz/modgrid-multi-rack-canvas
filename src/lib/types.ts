@@ -87,7 +87,33 @@ export interface CaseItem {
   y: number;
 }
 
+/** A module record sitting in a case. Only ever found in `Canvas.placed`. */
+export type PlacedModule = ModuleItem & { placement: Placement };
+
+/** One rack configuration: every case and every placed copy on one canvas. */
+export interface Canvas {
+  id: string;
+  name: string;
+  /** The canvas this was forked from. Missing means a root of the lineage forest. */
+  parentId?: string;
+  /** Array order is z-order and hit-test priority, as `AppState.cases` was before canvases existed. */
+  cases: CaseItem[];
+  placed: PlacedModule[];
+}
+
 export interface AppState {
+  /** Flat; the lineage forest is the `parentId` edges. Never empty. */
+  canvases: Canvas[];
+  /** The canvas you view and edit. Always names a canvas in `canvases`. */
+  activeId: string;
+  /** The bookmarked canvas: a label and a sibling sort key, nothing more. Always names a canvas. */
+  primaryId: string;
+  /** The global module pool: one record per module you own, every `placement` null. Shared by every canvas. */
+  modules: ModuleItem[];
+}
+
+/** A save written before canvases existed: one canvas's cases, with the pool and placed copies mixed in `modules`. */
+export interface LegacyAppState {
   cases: CaseItem[];
   modules: ModuleItem[];
 }

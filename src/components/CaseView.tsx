@@ -32,6 +32,7 @@ interface Props {
   onRowGripPointerDown: (e: React.PointerEvent<HTMLDivElement>, caseId: string, row: number) => void;
   onMove: (id: string, x: number, y: number) => void;
   onEdit: (id: string) => void;
+  onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
 }
 
@@ -93,6 +94,7 @@ export function CaseView({
   onRowGripPointerDown,
   onMove,
   onEdit,
+  onDuplicate,
   onDelete,
 }: Props) {
   const { w, h } = caseSize(c);
@@ -152,6 +154,9 @@ export function CaseView({
           <Button size="xs" variant="ghost" onClick={() => onEdit(c.id)}>
             Edit
           </Button>
+          <Button size="xs" variant="ghost" onClick={() => onDuplicate(c.id)} title="Copy this case and the modules in it">
+            Duplicate
+          </Button>
           <Button size="xs" variant="ghost" className="hover:bg-destructive/30" onClick={() => onDelete(c.id)}>
             Delete
           </Button>
@@ -203,7 +208,7 @@ export function CaseView({
             width={footprintCols(m, rotation) * HP_PX}
             height={rowHeight(rowTypeOf(c, p.row))}
             rotation={rotation}
-            className={`absolute ${m.locked ? 'cursor-default' : 'cursor-grab'} ${
+            className={`absolute transition-[left,top] duration-150 ${m.locked ? 'cursor-default' : 'cursor-grab'} ${
               m.id === draggingId || p.row === draggingRow ? 'opacity-25' : ''
             } ${m.id === selectedId ? 'z-10 outline-2 outline-sky-400' : ''}`}
             style={{ left: CASE_PAD + colLeft(p.col), top: rowTop(c, p.row) }}
