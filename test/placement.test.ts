@@ -14,7 +14,7 @@ import {
   rowTop,
   rowTypeOf,
 } from '../src/lib/geometry';
-import { canPlace, fits, nearestFreeCol, rowGaps } from '../src/lib/placement';
+import { canPlace, fits, nearestFreeCol, planSwap, rowGaps } from '../src/lib/placement';
 import type { RowType } from '../src/lib/types';
 
 const c = { id: 'c1', name: 'Case', rows: 2, hp: 84, x: 100, y: 50 };
@@ -234,5 +234,140 @@ describe('rowAtY', () => {
   it('clamps above the first row and below the last', () => {
     expect(rowAtY(three, three.y)).toBe(1);
     expect(rowAtY(three, three.y + 9999)).toBe(3);
+  });
+});
+
+describe('planSwap', () => {
+  const sc = { id: 'c1', rows: 2, hp: 40 };
+  const mod = (id: string, hp: number, row: number, col: number, extra = {}) => ({
+    id,
+    moduleId: id,
+    versionId: null,
+    name: id,
+    vendor: '',
+    description: '',
+    slug: id,
+    hp,
+    is1u: false,
+    power: { plus12: 0, minus12: 0, plus5: 0 },
+    source: '',
+    placement: { caseId: 'c1', row, col } as { caseId: string; row: number; col: number } | null,
+    ...extra,
+  });
+  const slot = (row: number, col: number) => ({ caseId: 'c1', row, col, rotation: 0 as const });
+
+  it('bumps the covered module into the vacated space', () => {
+    const a = mod('a', 10, 1, 1);
+    const b = mod('b', 10, 1, 20);
+    const plan = planSwap([a, b], [sc], a, slot(1, 20));
+    expect(plan?.col).toBe(20);
+    expect(plan?.swaps).toEqual([{ id: 'b', placement: { caseId: 'c1', row: 1, col: 1 } }]);
+  });
+
+  it('works across rows', () => {
+    const a = mod('a', 10, 1, 1);
+    const b = mod('b', 6, 2, 5);
+    expect(planSwap([a, b], [sc], a, slot(2, 5))?.swaps[0].placement).toMatchObject({ row: 1, col: 1 });
+  });
+
+  it('refuses when the covered module is locked', () => {
+    const a = mod('a', 10, 1, 1);
+    expect(planSwap([a, mod('b', 10, 1, 20, { locked: true })], [sc], a, slot(1, 20))).toBeNull();
+  });
+
+  it('refuses when the covered module does not fit the vacated space', () => {
+    const a = mod('a', 4, 1, 1);
+    const wall = mod('w', 10, 1, 5);
+    const b = mod('b', 12, 1, 20);
+    expect(planSwap([a, wall, b], [sc], a, slot(1, 20))).toBeNull();
+  });
+
+  it('bumps every covered module when they all fit the vacated space', () => {
+    const a = mod('a', 10, 1, 1);
+    const plan = planSwap([a, mod('b', 5, 1, 20), mod('c', 5, 1, 25)], [sc], a, slot(1, 20));
+    expect(plan?.swaps.map((x) => x.placement.col)).toEqual([1, 6]);
+  });
+
+  it('refuses a free-space drop', () => {
+    const a = mod('a', 10, 1, 1);
+    expect(planSwap([a, mod('b', 5, 1, 20)], [sc], a, slot(1, 30))).toBeNull();
+  });
+
+  it('ignores a barely overlapping nudge', () => {
+    const a = mod('a', 10, 1, 1);
+    expect(planSwap([a, mod('b', 10, 1, 20)], [sc], a, slot(1, 29))).toBeNull();
+  });
+
+  it('needs most of the module covered, not just half', () => {
+    const a = mod('a', 10, 1, 1);
+    const b = mod('b', 10, 1, 20);
+    expect(planSwap([a, b], [sc], a, slot(1, 25))).toBeNull(); // 5 of 10 HP
+    expect(planSwap([a, b], [sc], a, slot(1, 23))).toBeNull(); // 7 of 10 HP
+    expect(planSwap([a, b], [sc], a, slot(1, 22))).not.toBeNull(); // 8 of 10 HP
+  });
+
+  it('needs a placed dragged module', () => {
+    const a = mod('a', 10, 1, 1, { placement: null });
+    expect(planSwap([a, mod('b', 10, 1, 20)], [sc], a, slot(1, 20))).toBeNull();
+  });
+});
+
+describe('planSwap larger over smaller', () => {
+  const sc = { id: 'c1', rows: 1, hp: 60 };
+  const mod = (id: string, hp: number, col: number) => ({
+    id, moduleId: id, versionId: null, name: id, vendor: '', description: '', slug: id, hp, is1u: false,
+    power: { plus12: 0, minus12: 0, plus5: 0 }, source: '', placement: { caseId: 'c1', row: 1, col },
+  });
+  const slot = (col: number) => ({ caseId: 'c1', row: 1, col, rotation: 0 as const });
+
+  it('swaps a wide module with two small ones it covers', () => {
+    const a = mod('a', 20, 1);
+    const b = mod('b', 6, 30);
+    const c = mod('c', 6, 36);
+    const plan = planSwap([a, b, c], [sc], a, slot(30));
+    expect(plan).not.toBeNull();
+    expect(plan!.swaps.map((s) => s.id).sort()).toEqual(['b', 'c']);
+    expect(plan!.swaps.every((s) => s.placement.col >= 1 && s.placement.col + 6 <= 21)).toBe(true);
+  });
+
+  it('swaps a wide module with one small one whose neighbour it also clips', () => {
+    const a = mod('a', 20, 1);
+    const b = mod('b', 6, 30);
+    const c = mod('c', 6, 44);
+    const plan = planSwap([a, b, c], [sc], a, slot(25));
+    expect(plan?.swaps.map((s) => s.id)).toEqual(['b']);
+  });
+});
+
+describe('planSwap wider over narrower in a packed row', () => {
+  const sc = { id: 'c1', rows: 2, hp: 60 };
+  const mod = (id: string, hp: number, row: number, col: number, extra = {}) => ({
+    id, moduleId: id, versionId: null, name: id, vendor: '', description: '', slug: id, hp, is1u: false,
+    power: { plus12: 0, minus12: 0, plus5: 0 }, source: '', placement: { caseId: 'c1', row, col }, ...extra,
+  });
+  const slot = (row: number, col: number) => ({ caseId: 'c1', row, col, rotation: 0 as const });
+
+  it('bumps neighbours too when the narrow module leaves too little room', () => {
+    const a = mod('a', 20, 1, 1);
+    // Row 2 is packed: 8 + 12 + 6 + rest.
+    const left = mod('l', 8, 2, 1);
+    const b = mod('b', 12, 2, 9);
+    const right = mod('r', 6, 2, 21);
+    const plan = planSwap([a, left, b, right, mod('z', 33, 2, 27)], [sc], a, slot(2, 9));
+    expect(plan).not.toBeNull();
+    expect(plan!.swaps.map((s) => s.id)).toContain('b');
+  });
+
+  it('still refuses when even the neighbours do not fit', () => {
+    const a = mod('a', 20, 1, 1);
+    const b = mod('b', 12, 2, 1);
+    expect(planSwap([a, b, mod('z', 48, 2, 13)], [sc], a, slot(2, 1))).toBeNull();
+  });
+
+  it('does not bump locked neighbours', () => {
+    const a = mod('a', 20, 1, 1);
+    const b = mod('b', 12, 2, 9);
+    const plan = planSwap([a, mod('l', 8, 2, 1, { locked: true }), b, mod('r', 40, 2, 21, { locked: true })], [sc], a, slot(2, 9));
+    expect(plan).toBeNull();
   });
 });
